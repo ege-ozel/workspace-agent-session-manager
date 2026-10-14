@@ -2,7 +2,7 @@
   "name": "workspace-agent-session-manager",
   "displayName": "Workspace Agent Session Manager",
   "description": "Claude Code and OpenAI Codex sessions of every workspace folder in one place (start, resume, rename, archive, delete), with their context, 5-hour and weekly usage. Local files only: no network, no telemetry.",
-  "version": "0.30.9",
+  "version": "0.30.14",
   "publisher": "egeozel",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -49,6 +49,33 @@
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "workspaceAgentSessions.revealRepoIsOn",
+        "title": "✓ Explorer Follows Active Terminal",
+        "category": "Agent Sessions"
+      },
+      {
+        "command": "workspaceAgentSessions.revealRepoIsOff",
+        "title": "Explorer Follows Active Terminal",
+        "category": "Agent Sessions"
+      },
+      {
+        "command": "workspaceAgentSessions.debugTerminals",
+        "title": "Debug: List Terminals and Open Sessions",
+        "category": "Agent Sessions"
+      },
+      {
+        "command": "workspaceAgentSessions.restartSession",
+        "title": "Restart Terminal (close and resume)",
+        "category": "Agent Sessions",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "workspaceAgentSessions.restartAll",
+        "title": "Restart All Agent Terminals",
+        "category": "Agent Sessions",
+        "icon": "$(debug-restart)"
+      },
       {
         "command": "workspaceAgentSessions.refresh",
         "title": "Refresh",
@@ -97,7 +124,7 @@
       },
       {
         "command": "workspaceAgentSessions.newSessionMenu",
-        "title": "New Session in This Repo (choose agent)...",
+        "title": "New Agent Session...",
         "category": "Agent Sessions",
         "icon": "$(list-selection)"
       },
@@ -352,12 +379,32 @@
           "group": "navigation@2"
         },
         {
+          "command": "workspaceAgentSessions.revealRepoIsOn",
+          "group": "config@0.5",
+          "when": "view == workspaceAgentSessions.projects && workspaceAgentSessions.revealRepo"
+        },
+        {
+          "command": "workspaceAgentSessions.revealRepoIsOff",
+          "group": "config@0.5",
+          "when": "view == workspaceAgentSessions.projects && !workspaceAgentSessions.revealRepo"
+        },
+        {
+          "command": "workspaceAgentSessions.restartAll",
+          "group": "config@0",
+          "when": "view == workspaceAgentSessions.projects"
+        },
+        {
           "command": "workspaceAgentSessions.setDefaultAgent",
           "group": "config@1",
           "when": "view == workspaceAgentSessions.projects"
         }
       ],
       "view/item/context": [
+        {
+          "command": "workspaceAgentSessions.restartSession",
+          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.close\\./",
+          "group": "session@4.5"
+        },
         {
           "command": "workspaceAgentSessions.newSession",
           "when": "view == workspaceAgentSessions.projects && viewItem == repo",
@@ -421,7 +468,42 @@
         {
           "command": "workspaceAgentSessions.newSessionMenu",
           "when": "view == workspaceAgentSessions.projects && viewItem == repo",
-          "group": "repo@1"
+          "group": "0_new@1"
+        },
+        {
+          "command": "workspaceAgentSessions.newSession",
+          "when": "view == workspaceAgentSessions.projects && viewItem == repo",
+          "group": "0_new@2"
+        },
+        {
+          "command": "workspaceAgentSessions.openInWindow",
+          "when": "view == workspaceAgentSessions.projects && viewItem == repo",
+          "group": "1_repo@1"
+        },
+        {
+          "command": "workspaceAgentSessions.resumeSession",
+          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.resume\\./",
+          "group": "session@3"
+        },
+        {
+          "command": "workspaceAgentSessions.closeSession",
+          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.close\\./",
+          "group": "session@4"
+        },
+        {
+          "command": "workspaceAgentSessions.archiveSession",
+          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.archive\\./",
+          "group": "session@5"
+        },
+        {
+          "command": "workspaceAgentSessions.unarchiveSession",
+          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.unarchive\\./",
+          "group": "session@5"
+        },
+        {
+          "command": "workspaceAgentSessions.deleteSession",
+          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.delete\\./",
+          "group": "session@6"
         },
         {
           "command": "workspaceAgentSessions.rowRename",
@@ -568,6 +650,11 @@
           "default": 60,
           "minimum": 10,
           "description": "Fallback polling interval in seconds (file watching handles most updates)."
+        },
+        "workspaceAgentSessions.revealActiveRepo": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Show the repo of the active agent terminal in the Explorer when you switch terminals. Focus goes straight back to the terminal."
         }
       }
     }

@@ -33,14 +33,14 @@ Codex   ctx 61%  |  5h 16%  |  wk 37%
 
 - **ctx** = % of the active session's context window used
 - **5h / wk** = % of the 5-hour / weekly allowance used
-- `~` = the limit reading is older than `workspaceAgentSessions.claudeLimitsMaxAgeMinutes` and may be outdated
+- `~` = the limit reading is older than an hour (configurable for Claude with `workspaceAgentSessions.claudeLimitsMaxAgeMinutes`) and may be outdated
 - `—` = not reliably determinable
 
 **Hover** an item for the same bars as the Usage view, with the session's name, reset times and where the limits came from.
 
 The items sit at the **bottom-right of the status bar** (it must be visible: *View → Appearance → Status Bar*). Right-click the status bar to hide an agent.
 
-They follow the **active terminal**: with several agent terminals in one window (e.g. one per repo), switching terminals switches the numbers to that terminal's session. Terminals started from the Projects view are matched exactly: by the resumed session id, by the agent's process id (Claude), or by the terminal's start time (Codex, whose sessions carry no process id). For other terminals, the folder picks the newest session there. Without a matching session, the newest session of the workspace is shown, never one from another repo.
+They follow the **active terminal**: with several agent terminals in one window (e.g. one per repo), switching terminals switches the numbers to that terminal's session. Terminals started from the Projects view are matched exactly: by the resumed session id, by the agent's process id (Claude), or by the terminal's start time (Codex, whose sessions carry no process id). Their launch records survive a window reload. Direct Codex resume terminals from older versions can be recovered from the session id in their launch arguments. For other terminals, the folder picks the newest session there. Without a matching session, the newest session of the workspace is shown, never one from another repo; a terminal started from here waits for its own session instead.
 
 Hover for reset times and data age. Click for the menu: open the panel, re-read local data, Claude plan usage, agent commands, the sessions lists, bulk delete.
 
@@ -63,7 +63,7 @@ It works while Claude Code runs **in a terminal**: the Claude Code panel in VS C
 |---|---|---|
 | Active session | the active terminal's session (by id, else its folder), else the newest main-thread rollout in `~/.codex/sessions/YYYY/MM/DD/` (last 7 day folders; subagent threads skipped; workspace preferred) | running sessions in `~/.claude/sessions/<pid>.json` → `~/.claude/projects/<cwd>/<id>.jsonl` (the active terminal's session by id / pid / folder first, then the workspace's); else the newest transcript of the workspace |
 | Context used | last `token_count` event: `last_token_usage.total_tokens / model_context_window` | last main-chain assistant `message.usage`: input + cache creation + cache read tokens ÷ context window (from a `/usage` report, a `[1m]` model suffix, or the `workspaceAgentSessions.claudeContextWindows` setting) |
-| 5h / weekly | newest `token_count.rate_limits` (windows of 300 / 10080 minutes): `used_percent`, `resets_at` | newest of: *Live Claude limits* (above), *Claude limits from /usage* (above), a `/usage` report in the active transcript, or `~/.claude/vscode-claude-status-cache.json` (written by the *vscode-claude-status* extension, if installed) |
+| 5h / weekly | newest valid `token_count.rate_limits` for each window (300 / 10080 minutes), compared by report timestamp across recent transcripts: `used_percent`, `resets_at` | newest of: *Live Claude limits* (above), *Claude limits from /usage* (above), a `/usage` report in the active transcript, or `~/.claude/vscode-claude-status-cache.json` (written by the *vscode-claude-status* extension, if installed) |
 
 Without one of these sources, Claude's 5h / wk show `—`. Readings older than `workspaceAgentSessions.claudeLimitsMaxAgeMinutes` (default 60) get a `~`: usage only grows within a window, so an old reading may understate it. A window whose reset time has passed shows `0%` until fresh data arrives.
 
@@ -134,7 +134,7 @@ While an agent terminal started from here is active, its toolbar gets buttons fo
 - Claude's 5h / weekly numbers stay fresh only with *Live Claude limits* and a Claude Code terminal session. Otherwise they come from the last reading (faded, `~`, or one you pasted from `/usage`) or show `—`.
 - The Claude Code panel serves the first workspace folder only. Use a terminal session or **⧉** for other repos.
 - Sessions open in the Claude panel or the Codex app can't be closed from here.
-- Codex reports no process id, so a Codex terminal is recognised only while it was started from here in this window (not after a window reload, not when typed into a shell).
+- Codex reports no process id. Terminals started from here keep their mapping across reloads; older direct resume terminals can be recovered from their launch arguments. Codex typed into a shell, and new Codex terminals launched before 0.30.10 and already reloaded, cannot be matched exactly.
 - Listing reads every transcript, so the Projects view may take a moment with many hundreds of sessions.
 
 ## Adding an agent

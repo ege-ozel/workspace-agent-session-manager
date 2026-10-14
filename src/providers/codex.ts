@@ -146,6 +146,37 @@ function sessionContext(file: string): { ctxUsed?: number; detail?: string } {
   return out;
 }
 
+interface LimitReport { left: number; reset?: number; at: number }
+interface LimitReports { five?: LimitReport; week?: LimitReport }
+const limitsCache = new Map<string, { m: number; size: number; reports: LimitReports }>();
+
+function limitReports(r: Rollout): LimitReports {
+  let size: number;
+  try { size = fs.statSync(r.file).size; } catch { return {}; }
+  const cached = limitsCache.get(r.file);
+  // On Windows a writer can keep mtime unchanged while appending, so size matters too.
+  if (cached?.m === r.m && cached.size === size) return cached.reports;
+  const reports: LimitReports = {};
+  scanBackward(r.file, line => {
+    if (!line.includes('"rate_limits"')) return false;
+    const j = parseJson(line);
+    const rl = j?.payload?.type === 'token_count' ? j.payload.rate_limits : undefined;
+    if (!rl || typeof rl !== 'object' || (rl.limit_id != null && rl.limit_id !== 'codex')) return false;
+    const wins = [rl.primary, rl.secondary].filter(w => w && typeof w === 'object');
+    const pick = (minutes: number, fallback: any): LimitReport | undefined => {
+      const w = wins.find(w => w.window_minutes === minutes)
+        ?? (fallback && fallback.window_minutes == null ? fallback : undefined);
+      const left = remaining(w?.used_percent);
+      return left === undefined ? undefined : { left, reset: toMs(w.resets_at), at: toMs(j.timestamp) ?? r.m };
+    };
+    reports.five ??= pick(300, rl.primary);
+    reports.week ??= pick(10080, rl.secondary);
+    return !!reports.five && !!reports.week;
+  }, 4 * 1024 * 1024);
+  limitsCache.set(r.file, { m: r.m, size, reports });
+  return reports;
+}
+
 export function getCodex(folders: string[], focus?: Focus): Snapshot {
   if (!fs.existsSync(CODEX_DIR)) return { available: false };
   const snap: Snapshot = { available: true };
@@ -153,9 +184,10 @@ export function getCodex(folders: string[], focus?: Focus): Snapshot {
 
   const mains = recent.filter(r => meta(r.file).main);
   const cwdOf = (r: Rollout) => meta(r.file).cwd;
-  const byId = focus?.sessionId ? mains.find(r => r.id === focus.sessionId) : undefined;
-  const owned = !byId && focus?.startedAt !== undefined;
-  const focused = byId ?? (owned ? ownedThread(focus!.startedAt!, focus!.cwd, mains)
+  const byId = focus?.sessionId ? mains.find(r => r.id === focus.sessionId)
+    ?? rollouts().find(r => r.id === focus.sessionId && meta(r.file).main) : undefined;
+  const owned = !!focus?.sessionId || focus?.startedAt !== undefined;
+  const focused = byId ?? (focus?.sessionId ? undefined : focus?.startedAt !== undefined ? ownedThread(focus.startedAt, focus.cwd, mains)
     : focus && mains.find(r => { const c = cwdOf(r); return !!(focus.cwd && c && norm(c) === norm(focus.cwd)); }));
   // Rollouts here also come from the ChatGPT desktop app, so an unrelated repo's thread can easily be the
   // newest one. With a workspace open, only its own sessions count; with none, the newest still wins.
@@ -169,31 +201,28 @@ export function getCodex(folders: string[], focus?: Focus): Snapshot {
     snap.ctxUsed = sessionContext(active.file).ctxUsed;
   }
 
-  // Rate limits are account-wide: take the newest report from any thread.
-  for (const r of recent.slice(0, 5)) {
-    let found = false;
-    scanBackward(r.file, line => {
-      if (!line.includes('"rate_limits"')) return false;
-      const j = parseJson(line);
-      const rl = j?.payload?.type === 'token_count' ? j.payload.rate_limits : undefined;
-      if (!rl || typeof rl !== 'object' || (rl.limit_id != null && rl.limit_id !== 'codex')) return false;
-      const wins = [rl.primary, rl.secondary].filter(w => w && typeof w === 'object');
-      const pick = (minutes: number, fallback: any) =>
-        wins.find(w => w.window_minutes === minutes) ?? (fallback && fallback.window_minutes == null ? fallback : undefined);
-      const five = pick(300, rl.primary);
-      const week = pick(10080, rl.secondary);
-      const now = Date.now();
-      const fiveReset = toMs(five?.resets_at);
-      const weekReset = toMs(week?.resets_at);
-      if (five && (fiveReset === undefined || fiveReset > now)) { snap.fiveLeft = remaining(five.used_percent); snap.fiveReset = fiveReset; }
-      else if (five) snap.fiveLeft = 100;
-      if (week && (weekReset === undefined || weekReset > now)) { snap.weekLeft = remaining(week.used_percent); snap.weekReset = weekReset; }
-      else if (week) snap.weekLeft = 100;
-      snap.limitsAt = toMs(j.timestamp) ?? r.m;
-      snap.limitsSource = 'Codex session log';
-      return (found = true);
-    }, 4 * 1024 * 1024);
-    if (found) break;
+  // Account-wide limits follow the report's timestamp, not the transcript's last write.
+  let five: LimitReport | undefined, week: LimitReport | undefined;
+  for (const r of recent) {
+    const reports = limitReports(r);
+    if (reports.five && (!five || reports.five.at > five.at)) five = reports.five;
+    if (reports.week && (!week || reports.week.at > week.at)) week = reports.week;
+  }
+  const files = new Set(recent.map(r => r.file));
+  for (const file of limitsCache.keys()) if (!files.has(file)) limitsCache.delete(file);
+  const now = Date.now();
+  if (five) {
+    snap.fiveLeft = five.reset !== undefined && five.reset <= now ? 100 : five.left;
+    if (five.reset === undefined || five.reset > now) snap.fiveReset = five.reset;
+  }
+  if (week) {
+    snap.weekLeft = week.reset !== undefined && week.reset <= now ? 100 : week.left;
+    if (week.reset === undefined || week.reset > now) snap.weekReset = week.reset;
+  }
+  if (five || week) {
+    snap.limitsAt = Math.min(...[five?.at, week?.at].filter((at): at is number => at !== undefined));
+    snap.limitsSource = 'Codex session log';
+    snap.limitsStale = now - snap.limitsAt > 3600_000;
   }
   return snap;
 }

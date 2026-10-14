@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.30.14
+
+- *Explorer Follows Active Terminal* is a toggle in the Projects menu (off by default, like before).
+- *Debug: List Terminals and Open Sessions* command for diagnosing terminals that are not matched to their session.
+
+## 0.30.13
+
+- After a window reload, Codex terminals started by this extension before records existed are re-attached by their name or by being the only open Codex session in their folder, so they get their buttons back.
+
+## 0.30.12
+
+- Restart terminal: right-click a session with our terminal, or *Restart All Agent Terminals* in the Projects menu. Closes the terminal and resumes the session in a fresh one.
+
+## 0.30.11
+
+- Projects view: drag a repo row onto another to reorder; the order is remembered.
+- Right-click menus: sessions get resume / close / archive / delete, repos get *New Agent Session...* on top.
+- The new-session menu closes when you click elsewhere.
+- Setting `revealActiveRepo`: the active terminal's repo is shown in the Explorer (focus returns to the terminal).
+
+## 0.30.10
+
+- Codex limits use the newest report timestamp for each window across recent transcripts, even when a transcript's file date stays unchanged or its latest report is incomplete. Readings older than an hour are marked as outdated.
+- Terminals started from Projects keep their session mapping across window reloads, including Codex. Existing direct Codex resume terminals can also be recognised from their session id in the launch arguments.
+- Explicitly resumed Codex sessions remain identifiable when their rollout is older than the recent day folders.
+
 ## 0.30.9
 
 First Marketplace release.
