@@ -2,7 +2,7 @@
   "name": "workspace-agent-session-manager",
   "displayName": "Workspace Agent Session Manager",
   "description": "Claude Code and OpenAI Codex sessions of every workspace folder in one place (start, resume, rename, archive, delete), with their context, 5-hour and weekly usage. Local files only: no network, no telemetry.",
-  "version": "0.30.14",
+  "version": "0.30.17",
   "publisher": "egeozel",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -139,6 +139,24 @@
         "title": "Open Repo in New Window",
         "category": "Agent Sessions",
         "icon": "$(empty-window)"
+      },
+      {
+        "command": "workspaceAgentSessions.moveRepoUp",
+        "title": "Move Up",
+        "category": "Agent Sessions",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "workspaceAgentSessions.moveRepoDown",
+        "title": "Move Down",
+        "category": "Agent Sessions",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "workspaceAgentSessions.moveRepoToTop",
+        "title": "Move to Top",
+        "category": "Agent Sessions",
+        "icon": "$(fold-up)"
       },
       {
         "command": "workspaceAgentSessions.resumeSession",
@@ -302,12 +320,29 @@
           "id": "workspaceAgentSessions.view",
           "name": "Usage",
           "icon": "images/activity.svg",
-          "type": "webview"
+          "type": "webview",
+          "when": "!workspaceAgentSessions.revealRepo"
         },
         {
           "id": "workspaceAgentSessions.projects",
           "name": "Projects",
-          "icon": "images/activity.svg"
+          "icon": "images/activity.svg",
+          "when": "!workspaceAgentSessions.revealRepo"
+        }
+      ],
+      "explorer": [
+        {
+          "id": "workspaceAgentSessions.viewExplorer",
+          "name": "Usage",
+          "type": "webview",
+          "icon": "images/activity.svg",
+          "when": "workspaceAgentSessions.revealRepo"
+        },
+        {
+          "id": "workspaceAgentSessions.projectsExplorer",
+          "name": "Projects",
+          "icon": "images/activity.svg",
+          "when": "workspaceAgentSessions.revealRepo"
         }
       ]
     },
@@ -315,32 +350,32 @@
       "view/title": [
         {
           "command": "workspaceAgentSessions.startSession",
-          "when": "view == workspaceAgentSessions.projects",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/",
           "group": "navigation@0"
         },
         {
           "command": "workspaceAgentSessions.refresh",
-          "when": "view == workspaceAgentSessions.view",
+          "when": "view =~ /^workspaceAgentSessions\\.view/",
           "group": "navigation"
         },
         {
           "command": "workspaceAgentSessions.refreshProjects",
-          "when": "view == workspaceAgentSessions.projects",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/",
           "group": "navigation"
         },
         {
           "command": "workspaceAgentSessions.claudeLiveLimitsIsOn",
-          "when": "view == workspaceAgentSessions.view && workspaceAgentSessions.liveLimits == on",
+          "when": "view =~ /^workspaceAgentSessions\\.view/ && workspaceAgentSessions.liveLimits == on",
           "group": "navigation@1"
         },
         {
           "command": "workspaceAgentSessions.claudeLiveLimitsIsUnset",
-          "when": "view == workspaceAgentSessions.view && workspaceAgentSessions.liveLimits == unset",
+          "when": "view =~ /^workspaceAgentSessions\\.view/ && workspaceAgentSessions.liveLimits == unset",
           "group": "navigation@1"
         },
         {
           "command": "workspaceAgentSessions.claudeLiveLimitsIsOff",
-          "when": "view == workspaceAgentSessions.view && workspaceAgentSessions.liveLimits == off",
+          "when": "view =~ /^workspaceAgentSessions\\.view/ && workspaceAgentSessions.liveLimits == off",
           "group": "navigation@1"
         },
         {
@@ -375,145 +410,160 @@
         },
         {
           "command": "workspaceAgentSessions.deleteSessions",
-          "when": "view == workspaceAgentSessions.view",
+          "when": "view =~ /^workspaceAgentSessions\\.view/",
           "group": "navigation@2"
         },
         {
           "command": "workspaceAgentSessions.revealRepoIsOn",
           "group": "config@0.5",
-          "when": "view == workspaceAgentSessions.projects && workspaceAgentSessions.revealRepo"
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && workspaceAgentSessions.revealRepo"
         },
         {
           "command": "workspaceAgentSessions.revealRepoIsOff",
           "group": "config@0.5",
-          "when": "view == workspaceAgentSessions.projects && !workspaceAgentSessions.revealRepo"
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && !workspaceAgentSessions.revealRepo"
         },
         {
           "command": "workspaceAgentSessions.restartAll",
           "group": "config@0",
-          "when": "view == workspaceAgentSessions.projects"
+          "when": "view =~ /^workspaceAgentSessions\\.projects/"
         },
         {
           "command": "workspaceAgentSessions.setDefaultAgent",
           "group": "config@1",
-          "when": "view == workspaceAgentSessions.projects"
+          "when": "view =~ /^workspaceAgentSessions\\.projects/"
         }
       ],
       "view/item/context": [
         {
           "command": "workspaceAgentSessions.restartSession",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.close\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.close\\./",
           "group": "session@4.5"
         },
         {
           "command": "workspaceAgentSessions.newSession",
-          "when": "view == workspaceAgentSessions.projects && viewItem == repo",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /^repo\\./",
           "group": "inline@1"
         },
         {
           "command": "workspaceAgentSessions.openInWindow",
-          "when": "view == workspaceAgentSessions.projects && viewItem == repo",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /^repo\\./",
           "group": "inline@2"
         },
         {
           "command": "workspaceAgentSessions.resumeSession",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.resume\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.resume\\./",
           "group": "inline@1"
         },
         {
           "command": "workspaceAgentSessions.closeSession",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.close\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.close\\./",
           "group": "inline@4"
         },
         {
           "command": "workspaceAgentSessions.archiveSession",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.archive\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.archive\\./",
           "group": "inline@2"
         },
         {
           "command": "workspaceAgentSessions.unarchiveSession",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.unarchive\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.unarchive\\./",
           "group": "inline@2"
         },
         {
           "command": "workspaceAgentSessions.deleteSession",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.delete\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.delete\\./",
           "group": "inline@3"
         },
         {
           "command": "workspaceAgentSessions.agentCommands",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.close\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.close\\./",
           "group": "session@2"
         },
         {
           "command": "workspaceAgentSessions.rowContext",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.ctx\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.ctx\\./",
           "group": "inline@1"
         },
         {
           "command": "workspaceAgentSessions.rowCompact",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.compact\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.compact\\./",
           "group": "inline@2"
         },
         {
           "command": "workspaceAgentSessions.rowModel",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.model\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.model\\./",
           "group": "inline@3"
         },
         {
           "command": "workspaceAgentSessions.sessionDetails",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /^psession/",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /^psession/",
           "group": "session@1"
         },
         {
           "command": "workspaceAgentSessions.newSessionMenu",
-          "when": "view == workspaceAgentSessions.projects && viewItem == repo",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /^repo\\./",
           "group": "0_new@1"
         },
         {
           "command": "workspaceAgentSessions.newSession",
-          "when": "view == workspaceAgentSessions.projects && viewItem == repo",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /^repo\\./",
           "group": "0_new@2"
         },
         {
           "command": "workspaceAgentSessions.openInWindow",
-          "when": "view == workspaceAgentSessions.projects && viewItem == repo",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /^repo\\./",
           "group": "1_repo@1"
         },
         {
+          "command": "workspaceAgentSessions.moveRepoToTop",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.up\\./",
+          "group": "2_order@1"
+        },
+        {
+          "command": "workspaceAgentSessions.moveRepoUp",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.up\\./",
+          "group": "2_order@2"
+        },
+        {
+          "command": "workspaceAgentSessions.moveRepoDown",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.down\\./",
+          "group": "2_order@3"
+        },
+        {
           "command": "workspaceAgentSessions.resumeSession",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.resume\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.resume\\./",
           "group": "session@3"
         },
         {
           "command": "workspaceAgentSessions.closeSession",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.close\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.close\\./",
           "group": "session@4"
         },
         {
           "command": "workspaceAgentSessions.archiveSession",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.archive\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.archive\\./",
           "group": "session@5"
         },
         {
           "command": "workspaceAgentSessions.unarchiveSession",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.unarchive\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.unarchive\\./",
           "group": "session@5"
         },
         {
           "command": "workspaceAgentSessions.deleteSession",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.delete\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.delete\\./",
           "group": "session@6"
         },
         {
           "command": "workspaceAgentSessions.rowRename",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.rename\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.rename\\./",
           "group": "inline@1.5"
         },
         {
           "command": "workspaceAgentSessions.rowRename",
           "group": "session@1",
-          "when": "view == workspaceAgentSessions.projects && viewItem =~ /\\.rename\\./"
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.rename\\./"
         }
       ],
       "commandPalette": [
@@ -607,6 +657,18 @@
         },
         {
           "command": "workspaceAgentSessions.rowRename",
+          "when": "false"
+        },
+        {
+          "command": "workspaceAgentSessions.moveRepoUp",
+          "when": "false"
+        },
+        {
+          "command": "workspaceAgentSessions.moveRepoDown",
+          "when": "false"
+        },
+        {
+          "command": "workspaceAgentSessions.moveRepoToTop",
           "when": "false"
         }
       ]

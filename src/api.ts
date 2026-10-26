@@ -42,6 +42,9 @@ export interface SessionEntry {
   ctxUsed?: number;
   /** One line shown in the details dialog, e.g. "118,994 / 1,000,000 tokens · claude-opus-5-5". */
   contextDetail?: string;
+  /** Model and reasoning effort of the last turn, as the agent's own log records them. */
+  model?: string;
+  effort?: string;
   /** Where the session was started, when it is worth saying: the agent's own app or panel, not a plain terminal. */
   source?: string;
 }

@@ -78,7 +78,7 @@ The **Agent Sessions** icon in the activity bar opens two views (drag them to th
 The Claude Code panel only starts and lists sessions of the **first** workspace folder. The Projects view lists each workspace folder (with no folder open, each session's folder) with the sessions of every agent. Sessions started outside the workspace are listed under *Other folders*.
 
 - **+** in the title bar: new session. Pick the agent, repo, model and effort; the *Attach files* button on each step adds files to the first message.
-- **+** on a repo: new session there. It starts the agent set in `workspaceAgentSessions.defaultAgent` at once (choose it from the title bar's **…** menu → *Default Agent for +*), or asks. Right-click the repo for the full menu, including the agent's own panel.
+- **+** on a repo: new session there. It starts the agent set in `workspaceAgentSessions.defaultAgent` at once (choose it from the title bar's **…** menu → *Default Agent for +*), or asks. Right-click the repo for the full menu, including the agent's own panel. *Move Up* / *Move Down* / *Move to Top* there change the order of the repos; it is remembered.
 - **⧉** on a repo: open the repo in its own window (for the agent's panel there).
 - Click a session: its terminal if it runs in one of this window's terminals, else resume it in a new terminal (archived sessions and ones open elsewhere show their details instead).
 - The session of the **active terminal** is highlighted, and selected as you switch terminals. Also for Claude Code started by hand in a shell, and for terminals from before a window reload.

@@ -131,8 +131,16 @@ const archivedRollouts = () => listDir(ARCHIVED_DIR)
   .map(n => rolloutIn(ARCHIVED_DIR, n)).filter((r): r is Rollout => !!r).sort((a, b) => b.m - a.m);
 
 /** Context used by a rollout: last token_count's tokens ÷ the model's context window. */
-function sessionContext(file: string): { ctxUsed?: number; detail?: string } {
-  const out: { ctxUsed?: number; detail?: string } = {};
+function sessionContext(file: string): { ctxUsed?: number; detail?: string; model?: string; effort?: string } {
+  const out: { ctxUsed?: number; detail?: string; model?: string; effort?: string } = {};
+  scanBackward(file, line => {
+    if (!line.includes('"turn_context"')) return false;
+    const p = parseJson(line)?.payload;
+    if (typeof p?.model !== 'string') return false;
+    out.model = p.model;
+    if (typeof p.effort === 'string') out.effort = p.effort;
+    return true;
+  });
   scanBackward(file, line => {
     if (!line.includes('"token_count"')) return false;
     const info = parseJson(line)?.payload?.info;
@@ -255,7 +263,7 @@ export function listCodexSessions(scope: SessionScope): SessionEntry[] {
       const c = sessionContext(r.file);
       return {
         id: r.id, title: names.get(r.id) || fallbackTitle(r.id, meta(r.file).cwd), cwd: meta(r.file).cwd,
-        mtime: r.m, file: r.file, live, ctxUsed: c.ctxUsed, contextDetail: c.detail, source: sourceOf(meta(r.file).origin),
+        mtime: r.m, file: r.file, live, ctxUsed: c.ctxUsed, contextDetail: c.detail, model: c.model, effort: c.effort, source: sourceOf(meta(r.file).origin),
       };
     });
 }

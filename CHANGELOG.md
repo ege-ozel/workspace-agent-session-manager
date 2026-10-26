@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.30.17
+
+- Projects view: repos are reordered with *Move Up* / *Move Down* / *Move to Top* in their right-click menu instead of drag and drop. A drop always looked like putting one repo inside another, and session rows looked draggable although nothing could be done with them.
+
+## 0.30.16
+
+- Session rows: the tooltip (and the details dialog) now show the model and reasoning effort of the last turn, plus the context used, so a long title no longer hides them.
+
+## 0.30.15
+
+- While *Explorer Follows Active Terminal* is on, Usage and Projects are shown under the Explorer instead of their own activity bar icon, so revealing a repo no longer switches the sidebar away from them.
+
 ## 0.30.14
 
 - *Explorer Follows Active Terminal* is a toggle in the Projects menu (off by default, like before).

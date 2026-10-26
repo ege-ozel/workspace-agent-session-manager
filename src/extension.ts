@@ -321,6 +321,7 @@ export function activate(ctx: vscode.ExtensionContext): Api {
     treeChanged,
     treeChanged.event(() => usageView.render()),
     vscode.window.registerWebviewViewProvider('workspaceAgentSessions.view', usageView),
+    vscode.window.registerWebviewViewProvider('workspaceAgentSessions.viewExplorer', usageView),
     vscode.commands.registerCommand('workspaceAgentSessions.refresh', refreshAll),
     // Three ids, one action: the view shows the one matching the state, so its icon and tooltip say on or off.
     ...['claudeLiveLimits', 'claudeLiveLimitsIsOn', 'claudeLiveLimitsIsUnset', 'claudeLiveLimitsIsOff']
@@ -392,22 +393,22 @@ type Node = { kind: 'session'; e: Entry; s: SessionEntry };
  * because a tree row can only hold text, and these numbers read far better as bars.
  */
 class UsageView implements vscode.WebviewViewProvider {
-  private view?: vscode.WebviewView;
+  private views = new Set<vscode.WebviewView>();
 
   resolveWebviewView(view: vscode.WebviewView) {
-    this.view = view;
+    this.views.add(view);
     view.webview.options = { enableScripts: true };
     view.webview.onDidReceiveMessage((m: { id?: string; session?: string }) => {
       if (m.id && m.session) openSessionRow(m.id, m.session);
       else if (m.id) void showSessions(m.id);
     });
-    view.onDidDispose(() => { if (this.view === view) this.view = undefined; });
+    view.onDidDispose(() => this.views.delete(view));
     reloadOpen();
     this.render();
   }
 
   render() {
-    if (this.view) this.view.webview.html = usageHtml();
+    if (this.views.size) { const html = usageHtml(); for (const v of this.views) v.webview.html = html; }
   }
 }
 
@@ -450,7 +451,7 @@ function sessionRows(e: Entry): string {
     const t = windowTerminalFor(s);
     const act = !!t && t === vscode.window.activeTerminal;
     const repo = repos.size > 1 && s.cwd ? ` · ${path.basename(s.cwd)}` : '';
-    const tip = [s.contextDetail, s.cwd, t && `Terminal: ${t.name}${act ? ' (active)' : ''}`].filter(Boolean).join('\n');
+    const tip = [s.contextDetail, modelLine(s), s.cwd, t &&`Terminal: ${t.name}${act ? ' (active)' : ''}`].filter(Boolean).join('\n');
     return `<div class="s${cur ? ' cur' : ''}${act ? ' act' : ''}" data-s="${esc(s.id)}" title="${esc(tip)}">`
       + `<span class="sl">${esc(s.title)}${esc(repo)}</span>${BAR(s.ctxUsed, false)}`
       + `<span class="p">${esc(pct(s.ctxUsed))}</span></div>`;
@@ -548,7 +549,8 @@ type PNode =
 
 /** No argument: reload every session. A node: redraw just that row (the active terminal's highlight). */
 const projectsChanged = new vscode.EventEmitter<PNode | void>();
-let projectsView: vscode.TreeView<PNode> | undefined;
+/** The Projects tree and its copy in the Explorer (shown while Explorer follows the terminal). */
+const projectsViews: vscode.TreeView<PNode>[] = [];
 /** Session rows of the last load and each node's parent, for `reveal`. */
 let shownSessions: PSession[] = [];
 let parentOf = new Map<PNode, PNode>();
@@ -599,8 +601,9 @@ function syncHighlight() {
   const prev = shownSessions.find(x => keyOf(x) === highlightKey);
   highlightKey = key;
   for (const n of [prev, hit]) if (n) projectsChanged.fire(n);
-  if (hit && projectsView?.visible) {
-    projectsView.reveal(hit, { select: true, focus: false }).then(undefined, () => { /* reloaded meanwhile */ });
+  const shown = projectsViews.find(v => v.visible);
+  if (hit && shown) {
+    shown.reveal(hit, { select: true, focus: false }).then(undefined, () => { /* reloaded meanwhile */ });
   }
 }
 let projectsTimer: NodeJS.Timeout | undefined;
@@ -898,28 +901,27 @@ async function loadSessions(scope: SessionScope): Promise<PSession[]> {
 }
 
 const SESSION_URI = 'ai-usage-session';
+
+/** "model · effort", for tooltips: a long title crowds both out of the row itself. */
+const modelLine = (s: SessionEntry) => [s.model, s.effort && `effort ${s.effort}`].filter(Boolean).join(' · ') || undefined;
 const REPO_ORDER = 'projectsOrder';
-const REPO_MIME = 'application/vnd.code.tree.workspaceagentsessions.projects';
-/** Top-level repos in the order shown, so a drop can be turned into a new saved order. */
+/** Top-level repos in the order shown, so a move can be turned into a new saved order. */
 let shownRepos: string[] = [];
 
-/** Dragging a repo row onto another puts it right before that one; the order is remembered per folder path. */
-const projectsDrag: vscode.TreeDragAndDropController<PNode> = {
-  dragMimeTypes: [REPO_MIME],
-  dropMimeTypes: [REPO_MIME],
-  handleDrag(nodes, data) {
-    const n = nodes[0];
-    if (n?.kind === 'repo' && shownRepos.includes(n.folder)) data.set(REPO_MIME, new vscode.DataTransferItem(n.folder));
-  },
-  async handleDrop(target, data) {
-    const from = data.get(REPO_MIME)?.value as string | undefined;
-    if (!from || target?.kind !== 'repo' || from === target.folder) return;
-    const list = shownRepos.filter(f => f !== from);
-    list.splice(Math.max(0, list.indexOf(target.folder)), 0, from);
-    await memento?.update(REPO_ORDER, list.map(norm));
-    reloadProjectsNow();
-  },
-};
+/**
+ * Moves a repo row up / down / to the top; the order is remembered per folder path. Not drag and drop: a tree drop
+ * always looks like "put it inside", and with a drag controller every row, sessions too, looks draggable.
+ */
+async function moveRepo(n: PNode | undefined, to: 'up' | 'down' | 'top') {
+  if (n?.kind !== 'repo') return;
+  const list = [...shownRepos];
+  const i = list.indexOf(n.folder);
+  const j = to === 'top' ? 0 : to === 'up' ? i - 1 : i + 1;
+  if (i < 0 || j < 0 || j >= list.length || i === j) return;
+  list.splice(j, 0, ...list.splice(i, 1));
+  await memento?.update(REPO_ORDER, list.map(norm));
+  reloadProjectsNow();
+}
 
 /**
  * A tree row's text carries no colour of its own; a file decoration is the only way to tint one. Used for the
@@ -991,7 +993,9 @@ const projects: vscode.TreeDataProvider<PNode> = {
       it.description = `${n.sessions.length} session(s)${live ? ` · ${live} open` : ''}`;
       it.tooltip = n.folder;
       it.iconPath = new vscode.ThemeIcon('repo');
-      it.contextValue = 'repo';
+      // Flags for the Move Up / Down menu entries; repos under "Other folders" keep no order, so they get none.
+      const i = shownRepos.indexOf(n.folder);
+      it.contextValue = ['repo', i > 0 && 'up', i >= 0 && i < shownRepos.length - 1 && 'down'].filter(Boolean).join('.') + '.';
       return it;
     }
     if (n.kind === 'other') {
@@ -1011,7 +1015,8 @@ const projects: vscode.TreeDataProvider<PNode> = {
     const here = !!w && w === vscode.window.activeTerminal;
     const it = new vscode.TreeItem(here ? { label: s.title, highlights: [[0, s.title.length]] } : s.title);
     it.description = `${p.name} · ${sessionDesc(s)}`;
-    it.tooltip = [s.cwd, w && `Terminal: ${w.name}${here ? ' (active)' : ''}`].filter(Boolean).join('\n');
+    it.tooltip = [s.title, modelLine(s), s.ctxUsed !== undefined ? `Context ${pct(s.ctxUsed)}` : undefined, s.cwd,
+      w && `Terminal: ${w.name}${here ? ' (active)' : ''}`].filter(Boolean).join('\n');
     // Our own terminal is proof enough: Codex reports a thread as closed whenever it is not writing to it.
     const open = s.live || !!t;
     it.iconPath = new vscode.ThemeIcon(s.busy ? 'loading~spin' : open ? 'debug-start' : archived ? 'archive' : 'comment-discussion');
@@ -1213,8 +1218,11 @@ function registerProjects(): vscode.Disposable[] {
     projectsChanged.event(n => { if (!n) reloadOpen(); }),
     { dispose: () => clearTimeout(projectsTimer) },
     treeChanged.event(reloadProjects),
-    projectsView = vscode.window.createTreeView('workspaceAgentSessions.projects', { treeDataProvider: projects, dragAndDropController: projectsDrag }),
-    projectsView.onDidChangeVisibility(({ visible }) => { if (visible) { highlightKey = undefined; syncHighlight(); } }),
+    ...['workspaceAgentSessions.projects', 'workspaceAgentSessions.projectsExplorer'].flatMap(id => {
+      const v = vscode.window.createTreeView(id, { treeDataProvider: projects });
+      projectsViews.push(v);
+      return [v, v.onDidChangeVisibility(({ visible }) => { if (visible) { highlightKey = undefined; syncHighlight(); } })];
+    }),
     vscode.window.onDidChangeActiveTerminal(() => { syncHighlight(); revealActiveRepo(); }),
     vscode.window.onDidOpenTerminal(trackTerminal),
     vscode.window.registerFileDecorationProvider(sessionDecorations),
@@ -1263,6 +1271,9 @@ function registerProjects(): vscode.Disposable[] {
     vscode.commands.registerCommand('workspaceAgentSessions.openInWindow', (n: PNode) => {
       if (n?.kind === 'repo') openFolder(n.folder);
     }),
+    vscode.commands.registerCommand('workspaceAgentSessions.moveRepoUp', (n: PNode) => moveRepo(n, 'up')),
+    vscode.commands.registerCommand('workspaceAgentSessions.moveRepoDown', (n: PNode) => moveRepo(n, 'down')),
+    vscode.commands.registerCommand('workspaceAgentSessions.moveRepoToTop', (n: PNode) => moveRepo(n, 'top')),
     vscode.commands.registerCommand('workspaceAgentSessions.resumeSession', act(n => launch(n.e, n.s.cwd, n.s))),
     ...['revealRepoIsOn', 'revealRepoIsOff'].map(c => vscode.commands.registerCommand(`workspaceAgentSessions.${c}`, async () => {
       const cfg = vscode.workspace.getConfiguration('workspaceAgentSessions');
@@ -1510,6 +1521,7 @@ async function showDetails(s: SessionEntry, e?: Entry) {
   const lines = [
     `Context used: ${pct(s.ctxUsed)}`,
     s.contextDetail,
+    modelLine(s) && `Model: ${modelLine(s)}`,
     `Last activity: ${new Date(s.mtime).toLocaleString()} (${ago(s.mtime)})`,
     s.live ? 'Status: running' : undefined,
     s.source ? `Started from: ${s.source}` : undefined,

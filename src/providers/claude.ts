@@ -116,12 +116,13 @@ function contextWindowFor(model: string, windows: Record<string, number>, report
   return typeof w === 'number' && w > 0 ? w : undefined;
 }
 
-export interface SessionContext { ctxUsed?: number; detail?: string; note?: string }
+export interface SessionContext { ctxUsed?: number; detail?: string; note?: string; model?: string; effort?: string }
 
 /** Context used by a transcript's main chain: last assistant usage ÷ the model's context window. */
 function sessionContext(file: string, windows: Record<string, number>, reported: Record<string, number> = {}): SessionContext {
   let usage: any;
   let model = '';
+  let effort: string | undefined;
   let compacted = false;
   scanBackward(file, line => {
     if (line.includes('"compact_boundary"')) {
@@ -134,15 +135,16 @@ function sessionContext(file: string, windows: Record<string, number>, reported:
     if (j?.type !== 'assistant' || j.isSidechain || !u || j.message.model === '<synthetic>') return false;
     usage = u;
     model = String(j.message.model ?? '');
+    if (typeof j.effort === 'string') effort = j.effort;
     return true;
   });
   if (!usage) return { note: compacted ? 'Just compacted; waiting for the next reply' : undefined };
   const n = (v: unknown) => (typeof v === 'number' && v >= 0 ? v : 0);
   const tokens = n(usage.input_tokens) + n(usage.cache_creation_input_tokens) + n(usage.cache_read_input_tokens);
   const win = contextWindowFor(model, windows, reported[model]);
-  if (!win) return { detail: `${tokens.toLocaleString()} tokens · ${model}`, note: `Context window unknown for ${model || 'model'} (set workspaceAgentSessions.claudeContextWindows)` };
-  if (tokens <= 0 || tokens > win) return { detail: model };
-  return { ctxUsed: (tokens / win) * 100, detail: `${tokens.toLocaleString()} / ${win.toLocaleString()} tokens · ${model}` };
+  if (!win) return { model, effort, detail: `${tokens.toLocaleString()} tokens · ${model}`, note: `Context window unknown for ${model || 'model'} (set workspaceAgentSessions.claudeContextWindows)` };
+  if (tokens <= 0 || tokens > win) return { model, effort, detail: model };
+  return { model, effort, ctxUsed: (tokens / win) * 100, detail: `${tokens.toLocaleString()} / ${win.toLocaleString()} tokens · ${model}` };
 }
 
 export interface Limits { at: number; source: string; five?: number; fiveReset?: number; week?: number; weekReset?: number }
@@ -327,7 +329,7 @@ export function listClaudeSessions(scope: SessionScope, windows: Record<string, 
       const cwd = grabString(readHead(file, 16 * 1024), 'cwd') ?? d;
       out.push({
         id, title: title || fallbackTitle(id, cwd), cwd, mtime: m, file, live: live.has(id), busy: live.get(id)?.busy, pid: live.get(id)?.pid,
-        ctxUsed: c.ctxUsed, contextDetail: c.detail ?? c.note, source: live.get(id)?.source,
+        ctxUsed: c.ctxUsed, contextDetail: c.detail ?? c.note, model: c.model, effort: c.effort, source: live.get(id)?.source,
       });
     }
   }
