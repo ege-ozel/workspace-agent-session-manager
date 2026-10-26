@@ -2,43 +2,22 @@
 
 ## 0.30.17
 
-- Projects view: repos are reordered with *Move Up* / *Move Down* / *Move to Top* in their right-click menu instead of drag and drop. A drop always looked like putting one repo inside another, and session rows looked draggable although nothing could be done with them.
-
-## 0.30.16
-
-- Session rows: the tooltip (and the details dialog) now show the model and reasoning effort of the last turn, plus the context used, so a long title no longer hides them.
-
-## 0.30.15
-
-- While *Explorer Follows Active Terminal* is on, Usage and Projects are shown under the Explorer instead of their own activity bar icon, so revealing a repo no longer switches the sidebar away from them.
-
-## 0.30.14
-
-- *Explorer Follows Active Terminal* is a toggle in the Projects menu (off by default, like before).
+- Projects view: right-click a repo for *Move Up* / *Move Down* / *Move to Top*; the order is remembered.
+- Right-click menus: sessions get resume / close / archive / delete, repos get *New Agent Session...* on top.
+- Restart terminal: right-click a session with our terminal, or *Restart All Agent Terminals* in the Projects menu. Closes the terminal and resumes the session in a fresh one.
+- *Explorer Follows Active Terminal* (Projects menu, off by default): the active terminal's repo is shown in the Explorer, and Usage and Projects move under the Explorer so revealing a repo does not switch the sidebar away from them.
+- Session rows: the tooltip (and the details dialog) show the model and reasoning effort of the last turn, plus the context used.
+- Terminals started from Projects keep their session mapping across window reloads, Codex too; older Codex terminals are re-attached by their name, their session id in the launch arguments, or by being the only open Codex session in their folder.
+- Codex limits use the newest report for each window across recent transcripts; readings older than an hour are marked as outdated.
+- The new-session menu closes when you click elsewhere.
 - *Debug: List Terminals and Open Sessions* command for diagnosing terminals that are not matched to their session.
-
-## 0.30.13
-
-- After a window reload, Codex terminals started by this extension before records existed are re-attached by their name or by being the only open Codex session in their folder, so they get their buttons back.
 
 ## 0.30.12
 
-- Restart terminal: right-click a session with our terminal, or *Restart All Agent Terminals* in the Projects menu. Closes the terminal and resumes the session in a fresh one.
+- Projects view: its title says what **+** on a repo starts (*+ Claude*), and the button to change it moved from the **…** menu to the title bar.
+- README: screenshots of the views, the status bar and the quick picks.
 
 ## 0.30.11
-
-- Projects view: drag a repo row onto another to reorder; the order is remembered.
-- Right-click menus: sessions get resume / close / archive / delete, repos get *New Agent Session...* on top.
-- The new-session menu closes when you click elsewhere.
-- Setting `revealActiveRepo`: the active terminal's repo is shown in the Explorer (focus returns to the terminal).
-
-## 0.30.10
-
-- Codex limits use the newest report timestamp for each window across recent transcripts, even when a transcript's file date stays unchanged or its latest report is incomplete. Readings older than an hour are marked as outdated.
-- Terminals started from Projects keep their session mapping across window reloads, including Codex. Existing direct Codex resume terminals can also be recognised from their session id in the launch arguments.
-- Explicitly resumed Codex sessions remain identifiable when their rollout is older than the recent day folders.
-
-## 0.30.9
 
 First Marketplace release.
 
@@ -46,7 +25,7 @@ First Marketplace release.
 - Usage view: the same numbers as bars, with one context row per open session.
 - Projects view: every agent's sessions grouped by repo, with new (agent, model, effort, attached files), resume, close, rename, archive, unarchive and delete. Sessions outside the workspace are listed under *Other folders*.
 - Rename any closed session from the Projects view (✎ on the row); open ones in a terminal through the agent's `/rename`.
-- The active terminal's session is highlighted in the Projects and Usage views. Sessions already running in one of the window's terminals (also after a window reload, or Claude Code typed into a shell) open that terminal instead of offering to resume them again.
+- The active terminal's session is highlighted in the Projects and Usage views. Sessions already running in one of the window's terminals (also after a window reload, or Claude Code typed into a shell) open that terminal instead of offering to resume them again. A Claude terminal follows `/clear` and `/resume` to its new session.
 - Sessions list with details and bulk delete.
 - Agent terminal toolbar: `/context`, `/usage`, `/compact`, `/model`, mode switch and the agent's slash-command menu.
 - Provider API for other extensions to add agents.

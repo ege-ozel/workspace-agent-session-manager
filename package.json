@@ -290,7 +290,7 @@
         "command": "workspaceAgentSessions.setDefaultAgent",
         "title": "Default Agent for +...",
         "category": "Agent Sessions",
-        "icon": "$(gear)"
+        "icon": "$(hubot)"
       },
       {
         "command": "workspaceAgentSessions.quickRename",
@@ -361,7 +361,7 @@
         {
           "command": "workspaceAgentSessions.refreshProjects",
           "when": "view =~ /^workspaceAgentSessions\\.projects/",
-          "group": "navigation"
+          "group": "navigation@2"
         },
         {
           "command": "workspaceAgentSessions.claudeLiveLimitsIsOn",
@@ -430,7 +430,7 @@
         },
         {
           "command": "workspaceAgentSessions.setDefaultAgent",
-          "group": "config@1",
+          "group": "navigation@1",
           "when": "view =~ /^workspaceAgentSessions\\.projects/"
         }
       ],

@@ -13,3 +13,5 @@ CLAUDE.md
 images/icon.svg
 .playwright-mcp/**
 local-planning/**
+images/screenshots/**
+demo/**

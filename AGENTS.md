@@ -17,7 +17,7 @@ CLIs; no network requests, no telemetry. User-facing docs: [README.md](README.md
 | `src/util.ts` | Small fs/JSON/path helpers (`scanBackward` reads JSONL files from the end, `norm` for path comparisons, `pidAlive`, ...). |
 | `package.json` | `contributes`: commands, activity bar container + 2 views, menus (inline buttons via `when` clauses), settings. |
 | `CHANGELOG.md` | Release notes, shown on the Marketplace "Changelog" tab. One entry per published version. |
-| `images/` | `icon.svg` = source of `icon.png` (render at 256x256); `activity.svg` = the same gauge as a line icon, no `<mask>` (masks render grainy in the activity bar). |
+| `images/` | `icon.svg` = source of `icon.png` (render at 256x256); `activity.svg` = the same gauge as a line icon, no `<mask>` (masks render grainy in the activity bar). `screenshots/` = README pictures, taken from made-up sessions (`CLAUDE_CONFIG_DIR` / `CODEX_HOME` on fake data, a separate `--user-data-dir`), never real ones; left out of the `.vsix`, the Marketplace loads them from GitHub. The maintainer's local `demo/start-demo.ps1` (git-ignored) opens that setup. |
 | `out/`, `*.vsix` | Build output (git-ignored). |
 
 ## Architecture
@@ -50,7 +50,8 @@ UI surfaces
   regexes in `package.json` menus.
 - **Terminals**: "new" / "resume" run the agent CLI directly as the terminal process (`shellPath` = exe, no shell
   quoting) with `cwd` = repo. `launched` maps our terminals to sessions (resumed id, or Claude's pid) so "close"
-  can only ever close terminals this extension started.
+  can only ever close terminals this extension started. `/clear` / `/resume` move a terminal's process to another
+  session: `resolveLaunched` re-reads Claude's id from its pid record; Codex terminals keep their first thread.
 - **Other terminals** (`termPids`, `hostTerminal`, `adoptTerminals`): `launched` is in memory, but terminals survive
   a window reload (the pty host keeps the process). A terminal whose own process id equals a live session's pid is
   one of ours (users run agents in a shell), so it is put back into `launched`. An agent typed into a shell is found
@@ -70,7 +71,8 @@ UI surfaces
 - Transcripts: `projects/<encoded cwd>/<uuid>.jsonl` + optional sibling folder `<uuid>/` (subagents, tool results).
   Encoded cwd = every non-alphanumeric char → `-`.
 - Open sessions: `sessions/<pid>.json` = `{ pid, sessionId, cwd, status: 'idle' | 'busy', ... }`, valid while the
-  pid is alive. "Open" = a Claude Code process (usually a panel tab) has it loaded. Not time-based.
+  pid is alive. "Open" = a Claude Code process (usually a panel tab) has it loaded. Not time-based. `/clear` rewrites
+  `sessionId` in place to the new session, same pid (seen in 2.1.292); the old transcript is then closed.
 - 5h / weekly limits are kept in memory only. Claude Code passes them (`rate_limits.five_hour|seven_day`:
   `used_percentage` 0-100, `resets_at` epoch s) to the `statusLine` command's stdin after each reply, documented at
   code.claude.com/docs/en/statusline. Only the terminal UI runs the status line, not the VS Code panel. On Windows the
@@ -147,14 +149,15 @@ Never experiment on the real `~/.claude` / `~/.codex`.
    upload the `.vsix` at https://marketplace.visualstudio.com/manage. Open VSX (Cursor, Windsurf, VSCodium):
    `npx ovsx publish <file>.vsix -p <token>`.
 
-## Open items (as of 0.6.0, 2026-10-05)
+## Open items (as of 0.30.10, 2026-10-07)
 
-Not yet verified inside VS Code (only `tsc` + node checks on copied data were run):
-- [ ] Projects view renders per workspace folder; inline buttons appear per the table in README.
-- [ ] **+** starts Claude / Codex in a terminal in the right repo; **▶** resumes the right session there.
-- [ ] **✕** appears for a session started from the view and closes its terminal (Claude matched by pid:
-      assumes `sessions/<pid>.json` pid == terminal `processId`, i.e. `claude.exe` is not a launcher).
-- [ ] Archive / unarchive / delete from the view on real (closed) sessions, both agents.
+Smoke-tested inside VS Code on Windows with the installed 0.30.10 `.vsix` (2026-10-07):
+- [x] Projects view renders per workspace folder; inline buttons appear per the table in README.
+- [x] **+** starts Claude in a terminal in the right repo; **▶** resumes the right session there.
+- [x] **✕** appears for a session started from the view. Claude is matched by pid: `sessions/<pid>.json` pid ==
+      terminal `processId` (`claude.exe` is not a launcher), and after `/clear` the ✕ moves to the new session.
+- [x] Archive / unarchive / delete from the view on a real (closed) session.
+- [ ] The same for Codex (+, ▶, archive / unarchive / delete): not recorded.
 
 Known limits, candidates for later:
 - Listing reads every transcript on each reload; with hundreds of sessions, cache per file by mtime.
@@ -173,6 +176,9 @@ Known limits, candidates for later:
   with an editor or node, not PowerShell.
 - `@types/vscode` is pinned to `~1.93.0`, the same as `engines.vscode`: newer types let `tsc` accept APIs that 1.93
   lacks, and vsce refuses types newer than the engine. Raise both together.
+- No drag and drop in the Projects tree: a tree drop always highlights the target as "put it inside" (no line between
+  rows), and a drag controller makes every row draggable, sessions too. Repos move via *Move Up / Down / to Top*
+  (`moveRepo`, order in globalState `projectsOrder`).
 - `when` clause regexes in `package.json` need `\\.` (JSON escape) for a literal dot.
 - Never use `agentSessions` as an id: VS Code reserves that view container for its own chat sessions and drops ours
   ("View container 'agentSessions' requires enabledApiProposals: chatSessionsProvider", renderer log). Hence the
