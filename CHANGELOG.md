@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.31.9
+
+- Panel: code blocks get a *Copy* button on hover (like tables), and selected text is put on the clipboard as plain text by the Panel itself, in case the webview's own copy did not.
+
 ## 0.31.8
 
 - Panel: the message box is always there, and sends to any terminal of this window the session runs in, also an agent you typed into a shell (checked live first). A closed session is resumed by sending. When nothing can take the text (the session is open in another process) it says so and keeps your text.

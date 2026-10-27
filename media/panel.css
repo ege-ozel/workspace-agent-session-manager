@@ -26,6 +26,7 @@ body.dark {
 body { margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
   background: var(--bg); color: var(--fg); font: 13px/1.4 var(--vscode-font-family, system-ui, sans-serif); }
 button { font: inherit; color: inherit; }
+#chat, #ovbox { user-select: text; -webkit-user-select: text; }
 
 /* Header: fixed at the top. */
 #hd { flex: none; background: var(--side); border-bottom: 1px solid var(--line); }

@@ -62,6 +62,32 @@
     };
     return navigator.clipboard ? navigator.clipboard.writeText(text).catch(fallback) : Promise.resolve(fallback());
   }
+  // Code blocks get the same hover Copy button as tables.
+  function enhanceCode(root) {
+    for (const pre of root.querySelectorAll('pre')) {
+      const wrap = el('div', 'tblw');
+      pre.replaceWith(wrap);
+      const copy = el('button', null, 'Copy');
+      copy.onclick = e => {
+        e.stopPropagation();
+        void copyText(pre.textContent).then(() => {
+          copy.textContent = 'Copied ✓';
+          setTimeout(() => { copy.textContent = 'Copy'; }, 1200);
+        });
+      };
+      const btns = el('div', 'tbtns');
+      btns.append(copy);
+      wrap.append(pre, btns);
+    }
+  }
+  // Whatever is selected goes to the clipboard as plain text, even where the webview's own copy does not.
+  document.addEventListener('copy', e => {
+    const sel = String(getSelection() || '');
+    if (!sel || e.target === msg) return;
+    e.clipboardData.setData('text/plain', sel);
+    e.preventDefault();
+  });
+
   function enhanceTables(root) {
     for (const t of root.querySelectorAll('.tbl')) {
       const wrap = el('div', 'tblw');
@@ -150,7 +176,7 @@
   function render(v) {
     switch (v.kind) {
       case 'user': { const d = el('div', 'u'); d.innerHTML = v.html; return d; }
-      case 'assistant': { const d = el('div', 'a'); d.innerHTML = v.html; enhanceTables(d); return d; }
+      case 'assistant': { const d = el('div', 'a'); d.innerHTML = v.html; enhanceTables(d); enhanceCode(d); return d; }
       case 'tool': {
         const d = el('div', v.done ? 'tool done' : 'tool');
         d.append(el('b', null, v.name), v.summary ? ' ' + v.summary : '');
