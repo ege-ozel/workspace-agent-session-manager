@@ -167,9 +167,13 @@
       if (stick) chat.scrollTop = chat.scrollHeight;
     }
     earlier.hidden = !m.hasEarlier;
-    if (!list.children.length) list.append(el('div', 'empty', 'No messages yet.'));
+    if (!list.children.length) list.append(el('div', 'empty', emptyText()));
     else list.querySelector('.empty')?.remove();
   }
+
+  // A session started from here has no transcript until its first message: say where to write it.
+  let typing = false;
+  const emptyText = () => (typing ? 'Nothing here yet. Type your first message below.' : 'No messages yet.');
 
   // ---- header --------------------------------------------------------------
   function meter(label, m, cls) {
@@ -214,6 +218,9 @@
     wait.hidden = !waiting;
     $('why').textContent = m.waitingFor || '';
 
+    typing = !!m.canSend;
+    const empty = list.querySelector('.empty');
+    if (empty) empty.textContent = emptyText();
     compose.hidden = !m.canSend;
     ro.hidden = m.canSend;
     $('rowhy').textContent = m.readOnlyReason || '';
@@ -224,7 +231,7 @@
       const x = el('button', 'x', '×');
       x.title = 'Cancel this message';
       x.onclick = () => vscode.postMessage({ type: 'cancel', index: i });
-      q.append(el('span', null, 'queued · ' + text.replace(/s+/g, ' ').slice(0, 100)), x);
+      q.append(el('span', null, 'queued · ' + text.replace(/\s+/g, ' ').slice(0, 100)), x);
       return q;
     }));
   }

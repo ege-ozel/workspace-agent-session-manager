@@ -64,6 +64,7 @@ class SessionPanel {
   private debounce?: NodeJS.Timeout;
   private readonly poll: NodeJS.Timeout;
   private watcher?: fs.FSWatcher;
+  private watchedDir?: string;
 
   constructor(private readonly key: string, private readonly host: PanelHost, private readonly p: Provider, s: SessionEntry, ctx: vscode.ExtensionContext) {
     this.session = s;
@@ -74,12 +75,25 @@ class SessionPanel {
     this.panel.webview.html = this.html(media);
     this.panel.webview.onDidReceiveMessage(m => this.onMessage(m));
     this.panel.onDidDispose(() => this.dispose());
-    // The directory is watched, not the file: a new Claude session has no transcript until its first message.
-    try {
-      this.watcher = fs.watch(path.dirname(s.file), (_, name) => { if (!name || name === path.basename(s.file)) this.schedule(); });
-      this.watcher.on('error', () => { /* the poll below keeps it going */ });
-    } catch { /* folder not there yet */ }
+    this.watch();
     this.poll = setInterval(() => this.schedule(), 5000);
+  }
+
+  /**
+   * The directory is watched, not the file: a new Claude session has no transcript until its first message, and
+   * not even its project folder when the repo is new. Every pass tries again until there is a watcher.
+   */
+  private watch() {
+    const dir = path.dirname(this.session.file);
+    if (this.watcher && this.watchedDir === dir) return;
+    this.watcher?.close();
+    this.watcher = undefined;
+    try {
+      const w = fs.watch(dir, (_, name) => { if (!name || name === path.basename(this.session.file)) this.schedule(); });
+      w.on('error', () => { w.close(); if (this.watcher === w) this.watcher = undefined; });
+      this.watcher = w;
+      this.watchedDir = dir;
+    } catch { /* folder not there yet: the next poll looks again */ }
   }
 
   reveal() { this.panel.reveal(); }
@@ -183,6 +197,7 @@ class SessionPanel {
     if (this.reading) { this.again = true; return; }
     this.reading = true;
     try {
+      this.watch();
       do {
         this.again = false;
         let size = 0;

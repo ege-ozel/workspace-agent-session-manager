@@ -165,3 +165,15 @@ test('an old item still loads the right image after lines were appended', async 
   assert.strictEqual(await first.items[0].load(), 'QUFB');
   assert.strictEqual(await more.items.find(i => i.kind === 'image').load(), 'Q0ND');
 });
+
+test('a transcript that does not exist yet reads as empty, then fills in from `next` once it appears', async () => {
+  const f = path.join(home, 'later', 'new.jsonl');
+  const none = await claude.readTranscript(f, 0);
+  assert.deepStrictEqual(none, { items: [], next: 0 });
+  fs.mkdirSync(path.dirname(f));
+  fs.writeFileSync(f, jline({ type: 'user', message: { role: 'user', content: 'hello' } }));
+  const first = await claude.readTranscript(f, none.next);
+  assert.deepStrictEqual(first.items.map(i => i.kind), ['user']);
+  fs.appendFileSync(f, jline({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] } }));
+  assert.deepStrictEqual((await claude.readTranscript(f, first.next)).items.map(i => i.kind), ['assistant']);
+});

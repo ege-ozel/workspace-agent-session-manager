@@ -8,6 +8,7 @@ import { codex } from './providers/codex';
 import { norm, processParents } from './util';
 import { SavedTerminal, resumedCodex, terminalKey } from './terminals';
 import { PanelHost, disposePanels, hasPanel, openPanel as openSessionPanel, updatePanels } from './panel/panel';
+import { PickItem, PickSession, ago as agoFrom, pickItems, sessionKey, waitFor } from './panel/pick';
 
 /** Built-in agents. To add one: create src/providers/<agent>.ts exporting a Provider and list it here. */
 const BUILT_IN: Provider[] = [claude, codex];
@@ -103,8 +104,8 @@ function reloadOpen() {
   for (const e of entries.values()) reloadOpenOf(e);
 }
 
-function reloadOpenOf(e: Entry) {
-  Promise.resolve()
+function reloadOpenOf(e: Entry): Promise<void> {
+  return Promise.resolve()
     .then(() => e.p.listSessions?.(pctx, 'open') ?? [])
     .catch((): SessionEntry[] => [])
     .then(list => {
@@ -351,6 +352,7 @@ export function activate(ctx: vscode.ExtensionContext): Api {
       if (info && s && info.e.p.readTranscript) openSessionPanel(panelHost, info.e.p, s, extCtx);
       else void vscode.window.showInformationMessage('This terminal\u2019s session is not known yet: send its first message, then try again.');
     }),
+    vscode.commands.registerCommand('workspaceAgentSessions.openPanelPick', openPanelPick),
     vscode.commands.registerCommand('workspaceAgentSessions.openSessionPanel', (n: PNode) => {
       if (n?.kind === 'session' && n.e.p.readTranscript) openSessionPanel(panelHost, n.e.p, n.s, extCtx);
     }),
@@ -386,6 +388,54 @@ export function activate(ctx: vscode.ExtensionContext): Api {
 export function deactivate() { /* disposables handle cleanup */ }
 
 const openPanel = () => void vscode.commands.executeCommand('workbench.view.extension.workspaceAgentSessions');
+
+type PanelPick = vscode.QuickPickItem & { key?: string; item?: PickSession };
+
+/** "Open Panel...": the open sessions, then the latest closed ones, of every agent that can show a Panel. */
+async function openPanelPick() {
+  const agents = [...entries.values()].filter(e => e.p.readTranscript && e.p.listSessions);
+  const listOf = async (scope: SessionScope): Promise<PickSession[]> => (await Promise.all(agents.map(async e => {
+    try { return (await e.p.listSessions!(pctx, scope)).map(s => ({ providerId: e.p.id, agent: e.p.name, s })); } catch { return []; }
+  }))).flat();
+  const none = () => void vscode.window.showInformationMessage('No sessions.');
+  if (!agents.length) return none();
+
+  const qp = vscode.window.createQuickPick<PanelPick>();
+  qp.title = 'Open Panel';
+  qp.placeholder = 'Pick a session to read as a conversation';
+  qp.matchOnDescription = true;
+  qp.busy = true;
+  qp.onDidAccept(() => {
+    const it = qp.selectedItems[0]?.item;
+    qp.hide();
+    const e = it && entries.get(it.providerId);
+    if (it && e?.p.readTranscript) openSessionPanel(panelHost, e.p, it.s, extCtx);
+  });
+  let closed = false;
+  qp.onDidHide(() => { closed = true; qp.dispose(); });
+
+  const show = (rows: PickItem[]) => {
+    // The terminal in front, if it is ours, is the session you most likely mean.
+    const t = vscode.window.activeTerminal;
+    const info = t && launched.get(t);
+    const key = qp.activeItems[0]?.key ?? (info?.sessionId ? sessionKey(info.e.p.id, info.sessionId) : undefined);
+    qp.items = rows.map((r): PanelPick => 'separator' in r
+      ? { label: r.separator, kind: vscode.QuickPickItemKind.Separator } : { label: r.label, description: r.description, key: r.key, item: r.item });
+    const here = qp.items.find(i => key && i.key === key);
+    if (here) qp.activeItems = [here];
+  };
+
+  qp.show();
+  const open = await listOf('open');
+  if (closed) return;
+  show(pickItems(open, []));
+  const all = await listOf('all');
+  if (closed) return;
+  const rows = pickItems(open, all);
+  qp.busy = false;
+  if (!rows.length) { qp.hide(); return none(); }
+  show(rows);
+}
 
 async function menu(id?: string) {
   const listable = [...entries.values()].filter(e => e.p.listSessions)
@@ -790,7 +840,7 @@ function terminalName(base: string): string {
   for (let n = 2; ; n++) if (!taken.has(`${base} #${n}`)) return `${base} #${n}`;
 }
 
-function launch(e: Entry, cwd: string | undefined, s?: SessionEntry, options?: LaunchOptions) {
+function launch(e: Entry, cwd: string | undefined, s?: SessionEntry, options?: LaunchOptions): { t: vscode.Terminal; info: Launched } | undefined {
   // Claude Code writes a transcript only once the first message is sent. Resuming a session without one makes the
   // CLI exit at once ("terminated with exit code 1"), so say why instead.
   if (s?.file && !fs.existsSync(s.file)) {
@@ -820,6 +870,24 @@ function launch(e: Entry, cwd: string | undefined, s?: SessionEntry, options?: L
   t.show();
   syncAgentContext();
   reloadProjects();
+  return { t, info };
+}
+
+/**
+ * Opens the Panel of a session started new, once its terminal has one. Claude names it through its pid record,
+ * Codex through the thread that appeared after the terminal (resolveLaunched asks both); nothing new is detected
+ * here. Gives up quietly after a minute: the terminal is open anyway.
+ */
+async function panelWhenKnown({ t, info }: { t: vscode.Terminal; info: Launched }) {
+  const gone = () => launched.get(t) !== info || !!t.exitStatus;
+  const s = await waitFor(async () => {
+    // Before the pid is known resolveLaunched can only guess by folder, which names an older session of the repo.
+    if (info.pid === undefined) return undefined;
+    await reloadOpenOf(info.e);
+    const hit = info.sessionId ? info.e.open?.find(x => x.id === info.sessionId) : undefined;
+    return hit && (hit.pid === undefined || hit.pid === info.pid) ? hit : undefined;
+  }, { every: 1500, timeout: 60_000, cancelled: gone });
+  if (s && !gone() && info.e.p.readTranscript) openSessionPanel(panelHost, info.e.p, s, extCtx);
 }
 
 /** Closes the terminal we started for a session and resumes it in a fresh one (clears a garbled terminal state). */
@@ -881,6 +949,7 @@ async function newSessionFlow(folder?: string) {
   let agent = starters.length === 1 ? starters[0] : undefined;
   let dir = folders.length === 1 ? folders[0] : undefined;
   let model = '', effort = '';
+  let withPanel = false;
   const models = () => (agent?.p.launchChoices?.models ?? []).map(m => (typeof m === 'string' ? { id: m } : m));
   const efforts = () => {
     const m = models().find(x => x.id === model);
@@ -891,16 +960,21 @@ async function newSessionFlow(folder?: string) {
   for (let i = 0, step = 1; i >= 0 && i < 4;) {
     let r: unknown;
     if (i === 0) {
-      if (starters.length === 1 && !folder) { i += step; continue; }
+      // A lone agent is not asked about, unless it can also come with a Panel.
+      if (starters.length === 1 && !folder && !starters[0].p.readTranscript) { i += step; continue; }
       const panels = folder ? starters.filter(e => e.p.panelCommand && known.has(e.p.panelCommand!)) : [];
       r = await pickStep([
         ...starters.map(e => ({ label: `$(terminal) ${e.p.name}`, description: folder ? 'in a terminal' : undefined, e })),
-        ...panels.map(e => ({ label: `$(layout-sidebar-right) ${e.p.name} in panel`, panel: e })),
+        ...starters.filter(e => e.p.readTranscript).map(e => ({
+          label: `$(preview) ${e.p.name} in terminal + Panel`, description: 'conversation view next to the terminal', e, withPanel: true,
+        })),
+        ...panels.map(e => ({ label: `$(layout-sidebar-right) ${e.p.name} in its own extension panel`, panel: e })),
       ], title, 'Which agent?', false, files);
       if (r && r !== 'back') {
-        const hit = r as { e?: Entry; panel?: Entry };
+        const hit = r as { e?: Entry; panel?: Entry; withPanel?: boolean };
         if (hit.panel) return runPanel(hit.panel, folder!);
         agent = hit.e;
+        withPanel = !!hit.withPanel;
       }
     } else if (i === 1) {
       if (folders.length <= 1) { dir = folders[0]; i += step; continue; }
@@ -930,7 +1004,8 @@ async function newSessionFlow(folder?: string) {
     i += step;
   }
   if (!agent) return;
-  launch(agent, dir, undefined, { model: model || undefined, effort: effort || undefined, files });
+  const started = launch(agent, dir, undefined, { model: model || undefined, effort: effort || undefined, files });
+  if (started && withPanel) void panelWhenKnown(started);
 }
 
 /** The agent's own panel: it only serves the first workspace folder, so another repo needs its own window. */
@@ -1342,7 +1417,7 @@ function registerProjects(): vscode.Disposable[] {
     vscode.commands.registerCommand('workspaceAgentSessions.moveRepoUp', (n: PNode) => moveRepo(n, 'up')),
     vscode.commands.registerCommand('workspaceAgentSessions.moveRepoDown', (n: PNode) => moveRepo(n, 'down')),
     vscode.commands.registerCommand('workspaceAgentSessions.moveRepoToTop', (n: PNode) => moveRepo(n, 'top')),
-    vscode.commands.registerCommand('workspaceAgentSessions.resumeSession', act(n => launch(n.e, n.s.cwd, n.s))),
+    vscode.commands.registerCommand('workspaceAgentSessions.resumeSession', act(n => void launch(n.e, n.s.cwd, n.s))),
     ...['revealRepoIsOn', 'revealRepoIsOff'].map(c => vscode.commands.registerCommand(`workspaceAgentSessions.${c}`, async () => {
       const cfg = vscode.workspace.getConfiguration('workspaceAgentSessions');
       await cfg.update('revealActiveRepo', !cfg.get<boolean>('revealActiveRepo'), vscode.ConfigurationTarget.Global);
@@ -1392,10 +1467,7 @@ function until(ms?: number): string {
     : mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`);
 }
 
-function ago(ms: number): string {
-  const m = Math.round((Date.now() - ms) / 60000);
-  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)}h ${m % 60}m ago`;
-}
+const ago = (ms: number) => agoFrom(ms);
 
 const sessionDesc = (s: SessionEntry) =>
   [`Ctx ${pct(s.ctxUsed)}`, ago(s.mtime), s.busy ? 'working' : s.live || terminalFor(s) ? 'open' : '', s.source]
@@ -1610,7 +1682,7 @@ async function showDetails(s: SessionEntry, e?: Entry) {
     ...(t ? [GO] : []), ...(elsewhere ? [RESUME] : []), ...(s.cwd ? [OPEN, PATH] : []), ID);
   if (!pick) return;
   if (pick === GO) return t!.show();
-  if (pick === RESUME) return launch(e!, s.cwd, s);
+  if (pick === RESUME) return void launch(e!, s.cwd, s);
   if (pick === OPEN) return void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(s.cwd!));
   await vscode.env.clipboard.writeText(pick === PATH ? s.cwd! : s.id);
   vscode.window.setStatusBarMessage(`Agent Sessions: ${pick === PATH ? 'folder path' : 'session id'} copied`, 3000);

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.31.1
+
+- **Open Panel...** in the Command Palette (*Agent Sessions: Open Panel...*): pick any session, open ones first (running, or waiting for you), then the latest closed ones. The Panel button on a Projects row only shows on hover, so it was easy to miss.
+- **New session with a Panel**: the new-session menu offers *<Agent> in terminal + Panel*. The Panel opens next to the terminal once the agent has the session; a Claude session has no transcript until its first message, so it starts empty (*Type your first message below*) and fills in live. The agent's own VS Code panel is now called *in its own extension panel* in that menu.
+- The Panel keeps watching when a new session's project folder does not exist yet.
+- Fixed: the queued-message line in the Panel showed a space wherever the message had an *s* (a mistyped whitespace pattern).
+- Times in lists and details past a day read `2d 3h ago` instead of `51h 20m ago`.
+
 ## 0.31.0
 
 - **Panel view**: open any session as a conversation in an editor tab, next to its terminal (the **preview** button on a Projects row, its right-click menu, or the toolbar of an agent terminal started from here). Markdown tables are real tables with *Copy* (as cells) and *Enlarge*; images from tool results and your messages show as thumbnails and enlarge on click; tool calls are one-line chips and results fold open smoothly.

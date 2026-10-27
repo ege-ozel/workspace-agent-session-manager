@@ -102,7 +102,11 @@ The Claude Code panel only starts and lists sessions of the **first** workspace 
 
 A terminal can't show images, and it smears wide Markdown tables. The **Panel** shows the same session as a conversation in an editor tab (so it can be split and dragged like any editor), next to its terminal. The agent keeps running in its terminal: the panel only reads the transcript the agent already writes, and types into that terminal. Both views always agree, and everything the terminal offers (permission prompts, `/model` menus, plan approvals) stays there. Terminal mode is unchanged.
 
-Open it with the **preview** button on a session row in the Projects view (also in its right-click menu), or with the button in the toolbar of an agent terminal started from here.
+Ways to open one:
+
+- **Command Palette → *Agent Sessions: Open Panel...***: a list of your open sessions (`●` running, a bell when it waits for you) and the latest closed ones, of every agent. The list opens on the session of the terminal you are in.
+- **New session with a Panel**: **+** (or *New Agent Session...*) offers *Claude in terminal + Panel* next to *Claude*. It starts the terminal as usual and opens the session's Panel next to it as soon as the agent has the session, without waiting for the first message; type that first message in the Panel's message box. (*... in its own extension panel* is the agent's own VS Code panel, a different thing.)
+- The **preview** button on a session row in the Projects view (also in its right-click menu), or the button in the toolbar of an agent terminal started from here.
 
 - **Tables** are real tables. Hover one for **Copy** (as cells: pastes into Excel / Sheets; the text stays selectable too) and **⤢** (enlarge).
 - **Images** from tool results (screenshots) and from your messages show as thumbnails when scrolled into view; click one to enlarge it. An enlarged table or image closes with a click outside it, a click on the image, or Esc.

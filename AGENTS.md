@@ -16,7 +16,7 @@ CLIs; no network requests, no telemetry. User-facing docs: [README.md](README.md
 | `src/providers/codex.ts` | Codex: reads `~/.codex` (or `$CODEX_HOME`); mutations go through the `codex` CLI. |
 | `src/util.ts` | Small fs/JSON/path helpers (`scanBackward` reads JSONL files from the end, `norm` for path comparisons, `pidAlive`, ...), and `StatCache` (per-file results keyed by mtime + size, for the session lists). |
 | `src/transcript.ts` | JSONL transcript reading for the Panel: `readLines` (from a byte offset, complete lines only, with their offsets), `readLineAt`, `lazyImage` (an image item that holds no picture, only its place in the file). |
-| `src/panel/` | The Panel view. `panel.ts` = the webview panel (vscode); `view-model.ts` = what the webview receives (`toView`, `headerOf`; no `vscode` import); `markdown.ts` = our small Markdown renderer; `send.ts` = what to type and when (`terminalText`, `sendState`). |
+| `src/panel/` | The Panel view. `panel.ts` = the webview panel (vscode); `view-model.ts` = what the webview receives (`toView`, `headerOf`; no `vscode` import); `markdown.ts` = our small Markdown renderer; `send.ts` = what to type and when (`terminalText`, `sendState`); `pick.ts` = the "Open Panel..." rows (`pickItems`), `ago`, `waitFor` (no `vscode` import). |
 | `media/` | The Panel's webview script and CSS (plain files, no bundler). Loaded through `asWebviewUri`, so they must not be in `.vscodeignore`. |
 | `test/` | `node:test` unit tests against `out/` with synthetic fixtures in `test/fixtures/` (`npm test`). |
 | `docs/superpowers/` | Design notes of the Panel view (spec, plan, mockups); left out of the `.vsix`. |
@@ -86,6 +86,14 @@ UI surfaces
   agent's question, so text is held in a queue and typed after the next *fresh* check (`PanelHost.fresh` re-lists the
   open sessions; the cached entry can be seconds old). Control characters are stripped from what is typed (an Esc
   could end a bracketed paste early). Codex has no such state.
+- **Ways into the Panel**: the Projects row button / menu (`openSessionPanel`), the terminal toolbar (`openActivePanel`),
+  the palette's `openPanelPick` (open sessions, then ≤ 50 latest closed; `pickItems`), and "<agent> in terminal + Panel"
+  in the new-session chain (`newSessionFlow` → `launch` → `panelWhenKnown`). That last one asks nothing new: it polls
+  `reloadOpenOf` (which runs `resolveLaunched`) every 1.5 s for up to 60 s until the terminal's `Launched.sessionId`
+  is in the agent's open list (and, for Claude, its pid is ours), then opens the Panel; no answer = quietly nothing.
+  Not before `Launched.pid` is known: until then `resolveLaunched` can only match by folder, which names an *older*
+  session of the repo. A new Claude session has no transcript (and maybe no project folder) yet, so the Panel opens
+  empty and `SessionPanel.watch()` re-attaches its folder watcher on each pass until the folder exists.
 - **Session list cache**: `listClaudeSessions` / `listCodexSessions` keep what a file's content decides (title,
   context, model) in a `StatCache` keyed by mtime + size (Claude also by the `claudeContextWindows` setting); liveness,
   busy / waiting and Codex titles are asked again every call. A full listing prunes entries of vanished files, an

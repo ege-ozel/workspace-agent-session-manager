@@ -87,3 +87,15 @@ test('load finds the n-th image of one output, and survives appended lines', asy
   assert.strictEqual(await more.items[0].load(), 'Q0ND');
   assert.ok(readLines(f, 0).offsets.length === 2);
 });
+
+test('a rollout that does not exist yet reads as empty, then fills in from `next` once it appears', async () => {
+  const f = path.join(process.env.CODEX_HOME, 'later.jsonl');
+  const none = await codex.readTranscript(f, 0);
+  assert.deepStrictEqual(none, { items: [], next: 0 });
+  const line = JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hello' }] } }) + '\n';
+  fs.writeFileSync(f, line);
+  const first = await codex.readTranscript(f, none.next);
+  assert.deepStrictEqual(first.items.map(i => i.kind), ['user']);
+  fs.appendFileSync(f, line.replace('hello', 'again'));
+  assert.deepStrictEqual((await codex.readTranscript(f, first.next)).items.map(i => i.text), ['again']);
+});
