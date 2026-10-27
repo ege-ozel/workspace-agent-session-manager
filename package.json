@@ -726,7 +726,8 @@
     "compile": "tsc -p .",
     "watch": "tsc -watch -p .",
     "vscode:prepublish": "npm run clean && npm run compile",
-    "package": "vsce package"
+    "package": "vsce package",
+    "test": "tsc -p . && node --test test/"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

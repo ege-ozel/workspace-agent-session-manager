@@ -47,7 +47,20 @@ export interface SessionEntry {
   effort?: string;
   /** Where the session was started, when it is worth saying: the agent's own app or panel, not a plain terminal. */
   source?: string;
+  /** Claude only: set while the agent's terminal shows a question (permission prompt, menu), e.g. 'dialog open'. */
+  waitingFor?: string;
 }
+
+/** One renderable piece of a session's transcript, agent-neutral. */
+export type ChatItem =
+  | { kind: 'user'; text: string }
+  | { kind: 'assistant'; text: string }            // Markdown
+  | { kind: 'tool'; name: string; summary: string }
+  | { kind: 'toolResult'; text: string; error?: boolean }
+  | { kind: 'image'; mime: string; data: string };  // base64, no "data:" prefix
+
+/** `next` is the byte offset to pass as `from` on the next read. */
+export interface TranscriptChunk { items: ChatItem[]; next: number }
 
 /**
  * 'open': sessions currently in use (or recently active, if the agent has no such marker);
@@ -158,6 +171,8 @@ export interface Provider {
   /** Enables archiving; archived sessions are listed with the 'archived' scope. */
   archiveSession?(session: SessionEntry, ctx: ProviderContext): void | Promise<void>;
   unarchiveSession?(session: SessionEntry, ctx: ProviderContext): void | Promise<void>;
+  /** Enables the Panel view. `from`/`next`: byte offsets, so a live session only parses what was appended. */
+  readTranscript?(file: string, from?: number): Promise<TranscriptChunk>;
 }
 
 export interface Api {
