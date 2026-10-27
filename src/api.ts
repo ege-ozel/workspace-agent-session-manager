@@ -57,6 +57,8 @@ export type ChatItem =
   | { kind: 'assistant'; text: string }            // Markdown
   | { kind: 'tool'; name: string; summary: string }
   | { kind: 'toolResult'; text: string; error?: boolean }
+  /** Not written by the user or the agent (compaction, background task, hook): shown folded and dim. */
+  | { kind: 'note'; title: string; text: string }
   | { kind: 'image'; mime: string; data: string };  // base64, no "data:" prefix
 
 /** `next` is the byte offset to pass as `from` on the next read. */

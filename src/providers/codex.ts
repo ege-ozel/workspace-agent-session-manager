@@ -5,7 +5,8 @@ import * as path from 'path';
 import {
   remaining, toMs, parseJson, readJsonFile, mtime, listDir, scanBackward, readHead, grabString, inWorkspace, fallbackTitle, norm, appendJsonLine,
 } from '../util';
-import { Focus, LaunchChoices, LaunchModel, Provider, ProviderContext, Snapshot, SessionEntry, SessionScope } from '../api';
+import { readLines } from '../transcript';
+import { ChatItem, Focus, LaunchChoices, LaunchModel, Provider, ProviderContext, Snapshot, SessionEntry, SessionScope, TranscriptChunk } from '../api';
 
 export const CODEX_DIR = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
 export const SESSIONS_DIR = path.join(CODEX_DIR, 'sessions');
@@ -302,6 +303,78 @@ export function renameCodexSession(s: SessionEntry, title: string): void {
   appendJsonLine(path.join(CODEX_DIR, 'session_index.jsonl'), { id: s.id, thread_name: title, updated_at: new Date().toISOString() });
 }
 
+// Codex records what it injects (instructions, environment, attachments list) as ordinary "user" messages.
+const INJECTED = /^\s*(<environment_context|# AGENTS\.md|<external_codex_apps_open_page|# Files mentioned by the user|<\/?image[ >])/;
+
+// A reviewer's briefing: one message of dozens of text blocks quoting the conversation, none of it typed by the user.
+const HISTORY_DUMP = /^The following is the Codex agent history/;
+
+const dataImage = (url: unknown): ChatItem | undefined => {
+  const m = typeof url === 'string' ? /^data:([^;,]+);base64,(.*)$/s.exec(url) : null;
+  return m ? { kind: 'image', mime: m[1], data: m[2] } : undefined;
+};
+
+/** Text and images of a message or tool output: a string, or blocks of `input_text` / `output_text` / `input_image`. */
+function blockItems(content: unknown, text: (s: string) => ChatItem[]): ChatItem[] {
+  if (typeof content === 'string') return text(content);
+  const out: ChatItem[] = [];
+  for (const b of Array.isArray(content) ? content : []) {
+    const img = b?.type === 'input_image' ? dataImage(b.image_url) : undefined;
+    if (img) out.push(img);
+    else if (typeof b?.text === 'string') out.push(...text(b.text));
+  }
+  return out;
+}
+
+const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim().slice(0, 120);
+
+/** Function call arguments are a JSON string: a `command` array reads as a shell line, else the first text field. */
+function callSummary(args: unknown): string {
+  const a = typeof args === 'string' ? parseJson(args) : undefined;
+  if (Array.isArray(a?.command)) return oneLine(a.command.join(' '));
+  const first = Object.values(a ?? {}).find(v => typeof v === 'string');
+  return typeof first === 'string' ? oneLine(first) : '';
+}
+
+/** Rollout lines → renderable items. Reasoning, event_msg, turn_context, developer and injected messages are skipped. */
+export function codexItems(lines: string[]): ChatItem[] {
+  const out: ChatItem[] = [];
+  const result = (s: string): ChatItem[] => (s ? [{ kind: 'toolResult', text: s }] : []);
+  for (const line of lines) {
+    const j = parseJson(line);
+    const p = j?.payload;
+    // The compacted line also carries a copy of the history it replaced: only its mark is shown.
+    if (j?.type === 'compacted') out.push({ kind: 'note', title: 'Conversation compacted', text: typeof p?.message === 'string' ? p.message : '' });
+    else if (j?.type !== 'response_item') continue;
+    else if (p?.type === 'message' && p.role === 'user' && !(Array.isArray(p.content) && HISTORY_DUMP.test(p.content[0]?.text ?? ''))) {
+      out.push(...blockItems(p.content, s => {
+        if (INJECTED.test(s)) return [];
+        const hook = /^\s*<hook_prompt[^>]*>([\s\S]*?)<\/hook_prompt>\s*$/.exec(s);
+        if (hook) return [{ kind: 'note', title: 'Hook prompt', text: hook[1].trim() }];
+        return s.trim() ? [{ kind: 'user', text: s }] : [];
+      }));
+    } else if (p?.type === 'message' && p.role === 'assistant') {
+      out.push(...blockItems(p.content, s => (s.trim() ? [{ kind: 'assistant', text: s }] : [])));
+    } else if (p?.type === 'function_call' && typeof p.name === 'string') {
+      out.push({ kind: 'tool', name: p.name, summary: callSummary(p.arguments) });
+    } else if (p?.type === 'custom_tool_call' && typeof p.name === 'string') {
+      out.push({ kind: 'tool', name: p.name, summary: oneLine(String(p.input ?? '').split('\n')[0]) });
+    } else if (p?.type === 'function_call_output' || p?.type === 'custom_tool_call_output') {
+      // Several text blocks are one result, placed where the first one was.
+      const parts = blockItems(p.output, s => result(s));
+      const texts = parts.filter(i => i.kind === 'toolResult') as Extract<ChatItem, { kind: 'toolResult' }>[];
+      for (const t of texts.slice(1)) { texts[0].text += '\n' + t.text; parts.splice(parts.indexOf(t), 1); }
+      out.push(...parts);
+    }
+  }
+  return out;
+}
+
+export async function readCodexTranscript(file: string, from = 0): Promise<TranscriptChunk> {
+  const { lines, next } = readLines(file, from);
+  return { items: codexItems(lines), next };
+}
+
 const exe = (ctx: ProviderContext) => findCodexExe(ctx.extensionPath('openai.chatgpt'));
 
 /** Offered when the catalog is unreadable. Codex has no 'minimal' level, whatever its API accepts. */
@@ -335,6 +408,7 @@ export const codex: Provider = {
   openSessionsLabel: 'Loaded in Codex or active in the last 24 hours',
   listSessions: (_ctx, scope) => listCodexSessions(scope),
   deleteSession: (s, ctx) => runCodexOnSession(exe(ctx), 'delete', s.id),
+  readTranscript: readCodexTranscript,
   terminal: (ctx, _cwd, resumeId, o = {}) => {
     // `resume` takes no --image; images go with a new session only, other files are named in the prompt.
     const images = resumeId ? [] : (o.files ?? []).filter(f => IMAGE.test(f));

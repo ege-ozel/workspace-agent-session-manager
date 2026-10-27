@@ -84,3 +84,33 @@ test('waiting is its own state, not busy', () => {
   assert.strictEqual(by(sid('a')).busy, true);
   assert.strictEqual(by(sid('a')).waitingFor, undefined);
 });
+
+const injected = () => claudeItems(fs.readFileSync(path.join(__dirname, 'fixtures', 'claude-injected.jsonl'), 'utf8').split(/\r?\n/).filter(Boolean));
+
+test('lines the user did not write: kinds', () => {
+  assert.deepStrictEqual(injected().map(i => i.kind), ['tool', 'toolResult', 'note', 'user', 'user', 'tool', 'toolResult', 'note', 'user', 'user']);
+});
+
+test('slash command becomes a chip, its output a result without ansi', () => {
+  const [cmd, out] = injected();
+  assert.deepStrictEqual(cmd, { kind: 'tool', name: '/model', summary: 'opus' });
+  assert.deepStrictEqual(out, { kind: 'toolResult', text: 'Set model to opus <5>' });
+});
+
+test('compact summary is a note', () => {
+  const n = injected()[2];
+  assert.strictEqual(n.title, 'Conversation compacted');
+  assert.ok(n.text.startsWith('This session is being continued'));
+});
+
+test('system-reminder blocks are dropped, the rest stays', () => {
+  const users = injected().filter(i => i.kind === 'user').map(i => i.text);
+  assert.deepStrictEqual(users, ['fix this', 'look at it', '<pasted_content id="1">\nhello\n</pasted_content>', 'hello']);
+});
+
+test('bash mode and background tasks', () => {
+  const items = injected();
+  assert.deepStrictEqual(items[5], { kind: 'tool', name: '!', summary: 'ls -la' });
+  assert.deepStrictEqual(items[6], { kind: 'toolResult', text: 'a > b' });
+  assert.deepStrictEqual(items[7], { kind: 'note', title: 'Background task', text: 'Background command "build" failed' });
+});

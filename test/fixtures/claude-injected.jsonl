@@ -1,0 +1,12 @@
+{"type":"user","message":{"role":"user","content":"<command-name>/model</command-name>\n            <command-message>model</command-message>\n            <command-args>opus</command-args>"}}
+{"type":"user","message":{"role":"user","content":"<local-command-stdout>\u001b[2mSet model to opus &lt;5&gt;\u001b[22m</local-command-stdout>"}}
+{"type":"user","isCompactSummary":true,"isVisibleInTranscriptOnly":true,"message":{"role":"user","content":"This session is being continued from a previous conversation.\n\n<system-reminder>\n<tools-used-before-summary>Bash</tools-used-before-summary>\n</system-reminder>\nSummary: x"}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"<system-reminder>\nonly this\n</system-reminder>"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"fix this\n<system-reminder>\nhidden\n</system-reminder>"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"<ide_opened_file>The user opened a.ts in the IDE.</ide_opened_file>"},{"type":"text","text":"look at it"}]}}
+{"type":"user","message":{"role":"user","content":"<bash-input> ls -la</bash-input>"}}
+{"type":"user","message":{"role":"user","content":"<bash-stdout>a &gt; b</bash-stdout><bash-stderr></bash-stderr>"}}
+{"type":"user","message":{"role":"user","content":"<task-notification>\n<task-id>b1</task-id>\n<status>failed</status>\n<summary>Background command \"build\" failed</summary>\n</task-notification>"}}
+{"type":"user","message":{"role":"user","content":"<local-command-caveat>Caveat: not for you.</local-command-caveat>"}}
+{"type":"user","message":{"role":"user","content":"<pasted_content id=\"1\">\nhello\n</pasted_content>"}}
+{"type":"user","message":{"role":"user","content":"hello"}}

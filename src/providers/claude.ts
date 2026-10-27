@@ -385,6 +385,26 @@ function resultItems(b: any): ChatItem[] {
   return out;
 }
 
+// Claude Code records its own bookkeeping as "user" text wrapped in tags (seen in real transcripts, 2.1.x).
+const INJECTED = /<(system-reminder|ide_opened_file|browser_instruction|local-command-caveat)>[\s\S]*?<\/\1>/g;
+const OUTPUT_TAGS = /<(local-command-stdout|local-command-stderr|bash-stdout|bash-stderr)>([\s\S]*?)<\/\1>/g;
+const tagText = (s: string, tag: string) => new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(s)?.[1].trim();
+const plain = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').trim();
+
+/** What the user did not type themselves (slash commands, `!` shell, background tasks, injected context) is not a bubble. */
+function userTextItems(text: string): ChatItem[] {
+  const t = text.replace(INJECTED, '').trim();
+  if (!t) return [];
+  if (t.startsWith('<command-name>')) return [{ kind: 'tool', name: tagText(t, 'command-name') ?? '', summary: plain(tagText(t, 'command-args') ?? '').slice(0, 120) }];
+  if (t.startsWith('<bash-input>')) return [{ kind: 'tool', name: '!', summary: plain(tagText(t, 'bash-input') ?? '').replace(/\s+/g, ' ').slice(0, 120) }];
+  if (/^<(local-command-std(out|err)|bash-std(out|err))>/.test(t)) {
+    const body = [...t.matchAll(OUTPUT_TAGS)].map(m => plain(m[2])).filter(Boolean).join('\n');
+    return body ? [{ kind: 'toolResult', text: body }] : [];
+  }
+  if (t.startsWith('<task-notification>')) return [{ kind: 'note', title: 'Background task', text: tagText(t, 'summary') ?? t }];
+  return [{ kind: 'user', text: t }];
+}
+
 /** Transcript lines → renderable items. Bookkeeping (titles, system lines, meta messages, thinking) is skipped. */
 export function claudeItems(lines: string[]): ChatItem[] {
   const out: ChatItem[] = [];
@@ -393,12 +413,18 @@ export function claudeItems(lines: string[]): ChatItem[] {
     const role = j?.type;
     if ((role !== 'user' && role !== 'assistant') || j.isMeta) continue;
     const content = j.message?.content;
+    if (j.isCompactSummary) {
+      const text = typeof content === 'string' ? content : (Array.isArray(content) ? content : []).map((b: any) => b?.text ?? '').join('\n');
+      out.push({ kind: 'note', title: 'Conversation compacted', text });
+      continue;
+    }
+    const text = (s: string): ChatItem[] => (role === 'user' ? userTextItems(s) : s.trim() ? [{ kind: 'assistant', text: s }] : []);
     if (typeof content === 'string') {
-      if (content.trim()) out.push({ kind: role, text: content });
+      out.push(...text(content));
       continue;
     }
     for (const b of Array.isArray(content) ? content : []) {
-      if (b?.type === 'text' && typeof b.text === 'string' && b.text.trim()) out.push({ kind: role, text: b.text });
+      if (b?.type === 'text' && typeof b.text === 'string') out.push(...text(b.text));
       else if (b?.type === 'tool_use' && typeof b.name === 'string') out.push({ kind: 'tool', name: b.name, summary: toolSummary(b.input) });
       else if (b?.type === 'tool_result') out.push(...resultItems(b));
       else { const img = imageOf(b); if (img) out.push(img); }

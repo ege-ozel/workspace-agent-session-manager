@@ -1,0 +1,17 @@
+{"timestamp":"2026-10-27T09:00:00.000Z","type":"session_meta","payload":{"id":"22222222-2222-4222-8222-222222222222","cwd":"/work/x"}}
+{"timestamp":"2026-10-27T09:00:00.100Z","type":"turn_context","payload":{"model":"gpt-x","cwd":"/work/x"}}
+{"timestamp":"2026-10-27T09:00:00.200Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"<permissions instructions>\nsandbox_mode is danger-full-access"}]}}
+{"timestamp":"2026-10-27T09:00:00.300Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions for /work/x\n\n<INSTRUCTIONS>\nbe nice\n</INSTRUCTIONS>"}]}}
+{"timestamp":"2026-10-27T09:00:00.400Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>\n  <cwd>/work/x</cwd>\n</environment_context>"}]}}
+{"timestamp":"2026-10-27T09:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<image name=[Image #1] path=\"/tmp/x.png\">"},{"type":"input_image","image_url":"data:image/png;base64,iVBORw0KGgo="},{"type":"input_text","text":"</image>"},{"type":"input_text","text":"fix this"}]}}
+{"timestamp":"2026-10-27T09:00:02.000Z","type":"response_item","payload":{"type":"reasoning","summary":[],"encrypted_content":"abc"}}
+{"timestamp":"2026-10-27T09:00:03.000Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"git\",\"status\"]}","call_id":"c1"}}
+{"timestamp":"2026-10-27T09:00:04.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":[{"type":"input_text","text":"on branch main"},{"type":"input_image","image_url":"data:image/png;base64,iVBORw0KGgo="}]}}
+{"timestamp":"2026-10-27T09:00:05.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"await tools.x()\nmore code","call_id":"c2"}}
+{"timestamp":"2026-10-27T09:00:06.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c2","output":"done"}}
+{"timestamp":"2026-10-27T09:00:07.000Z","type":"event_msg","payload":{"type":"token_count"}}
+{"timestamp":"2026-10-27T09:00:08.000Z","type":"compacted","payload":{"message":"","replacement_history":[{"type":"message","role":"user","content":[{"type":"input_text","text":"OLD HISTORY COPY"}]}]}}
+{"timestamp":"2026-10-27T09:00:09.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<hook_prompt hook_run_id=\"stop:0\">Task handoff: review it</hook_prompt>"}]}}
+{"timestamp":"2026-10-27T09:00:09.500Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"The following is the Codex agent history added since your last approval request."},{"type":"input_text","text":">>> ROOT CONVERSATION START\n"},{"type":"input_text","text":"user: quoted text"}]}}
+{"timestamp":"2026-10-27T09:00:10.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"| A | B |\n|---|---|\n| 1 | 2 |"}]}}
+{"timestamp":"2026-10-27T09:00:11.000Z","type":"event_msg","payload":{"type":"task_complete"}}
