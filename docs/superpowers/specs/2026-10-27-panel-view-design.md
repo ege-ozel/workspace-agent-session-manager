@@ -27,9 +27,33 @@ renders the session's transcript as a conversation:
   Click outside it, click the image, or press Esc to close. Text in an enlarged table is still selectable.
 - a **message box** at the bottom: Enter sends the text to the session's terminal, as if typed there.
 
-The approved mockup: `.superpowers/brainstorm/61-1793096959/content/panel-view.html` in
-`D:\CodeSpace\workspace-agent-session-manager` (same look: VS Code dark colours, the Terminal | Panel switch in
-the header, Copy / ⤢ on hover). The real panel uses the theme's CSS variables, so light themes work too.
+Behaviour mockup: `docs/superpowers/mockups/panel-behaviour.html` (the Terminal | Panel switch in the header,
+Copy / ⤢ on hover, the overlay). The real panel uses the theme's CSS variables, so light themes work too.
+
+### Look (approved 2026-10-27)
+
+Approved look: `docs/superpowers/mockups/panel-look.html` ("B + A's colors"). It overrides the first mockup's styling;
+the first one still defines the behaviour (Copy / ⤢ / overlay).
+
+- **Layout and type (from "B, airy")**: reading text 15px / line-height 1.65 in a serif stack
+  (`Georgia, "Iowan Old Style", serif`); body padding 14px 18px; user messages as rounded bubbles (radius 14px,
+  padding 8px 14px, 14px sans-serif); tables 13px sans-serif with radius 10px, a 1px outline, cell padding
+  7px 12px; images as thumbnails with radius 12px and a soft shadow; inline code 13px monospace on a slightly
+  lighter background, radius 4px.
+- **Colours (from "A, VS Code native")**: the theme's own background / foreground / borders via VS Code CSS
+  variables (the mockup's #1e1e1e / #cccccc / #3c3c3c are the Dark+ values), so light themes follow.
+- **Accents: blue, teal, orange.** Tool calls = monospace 12.5px, blue text (`#9cdcfe`, name in `#3794ff`),
+  **no border box and no background**, only a 2px blue line on the left. Completed results (✓ edited / written)
+  use the same shape in teal (`#2ec4b6`). Things that need the user (question in the terminal, errors) use the
+  same shape in orange (`#f0883e`). In light themes, pick darker shades of the same three hues.
+- **Session header** (top of every panel, one line, wraps when narrow): agent name with a coloured dot
+  (Claude orange, Codex teal; other providers blue), model · effort, then **ctx** as a small bar + "18% ·
+  180k / 1M", **5h** and **wk** as small bars + used %, and the Terminal | Panel switch on the right. Under it,
+  the session title · repo in small dim text. Data comes from what the extension already has: `SessionEntry`
+  (`ctxUsed`, `contextDetail`, `model`, `effort`) and the provider's last `Snapshot` (`fiveLeft`, `weekLeft`
+  shown as used = 100 − left, `limitsStale` → drawn fainter with `~`, as the Usage view does). Missing values
+  are left out, not shown as "—". Claude's 5h / weekly still need the status line ("Live Claude limits"):
+  checked 2.1.311 on 2026-10-27, nothing else writes them to disk.
 
 **Terminal mode stays exactly as it is.** Nobody who prefers the terminal loses anything; the panel is an
 extra view of the same session, not a replacement.
