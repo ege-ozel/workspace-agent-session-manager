@@ -32,8 +32,14 @@ Copy / ⤢ on hover, the overlay). The real panel uses the theme's CSS variables
 
 ### Look (approved 2026-10-27)
 
-Approved look: `docs/superpowers/mockups/panel-look.html` ("B + A's colors"). It overrides the first mockup's styling;
-the first one still defines the behaviour (Copy / ⤢ / overlay).
+Approved look: `docs/superpowers/mockups/panel-look.html` ("B + A's colors", final version with badges, the
+orange limit bar and the waiting glow). It overrides the first mockup's styling; the first one still defines
+the behaviour (Copy / ⤢ / overlay).
+
+**Colour rule (teal & orange, split-complementary):** cool colours carry context, warm carries "you are
+needed". Blue and teal are two shades of the cool side and never the only thing telling two meanings apart
+(each also has a label or icon). **Orange appears only when something needs the user**, so it keeps its pull:
+it is never used for identity or decoration.
 
 - **Layout and type (from "B, airy")**: reading text 15px / line-height 1.65 in a serif stack
   (`Georgia, "Iowan Old Style", serif`); body padding 14px 18px; user messages as rounded bubbles (radius 14px,
@@ -46,9 +52,18 @@ the first one still defines the behaviour (Copy / ⤢ / overlay).
   **no border box and no background**, only a 2px blue line on the left. Completed results (✓ edited / written)
   use the same shape in teal (`#2ec4b6`). Things that need the user (question in the terminal, errors) use the
   same shape in orange (`#f0883e`). In light themes, pick darker shades of the same three hues.
-- **Session header** (top of every panel, one line, wraps when narrow): agent name with a coloured dot
-  (Claude orange, Codex teal; other providers blue), model · effort, then **ctx** as a small bar + "18% ·
-  180k / 1M", **5h** and **wk** as small bars + used %, and the Terminal | Panel switch on the right. Under it,
+- **Session header** (top of every panel, one line, wraps when narrow): agent name with a **neutral letter
+  badge** (18px rounded square, `#3a3a3a`-ish background from the theme, bold first letter: Claude "C",
+  Codex "X", others their name's first letter; no accent colour), model · effort, then **ctx** as a small bar
+  (teal) + "18% · 180k / 1M", **5h** and **wk** as small bars (blue) + used %, and the Terminal | Panel switch
+  on the right. **Any bar at 80% used or more turns orange** (bar and its label, light orange `#ffb27a` text).
+- **Waiting for the user** (Claude `waitingFor` set): the whole panel's border turns orange with a soft glow
+  (`box-shadow: 0 0 0 1px rgba(240,136,62,.35), 0 0 18px rgba(240,136,62,.28)`), pulsing **once** (≈1.6 s, a
+  stronger glow fading to that) when the state begins, then steady; no looping animation. The bar "Waiting in
+  terminal: <waitingFor>" gets the same left line in orange, a faint orange background
+  (`rgba(240,136,62,.08)`), its own glow and an "Answer in terminal" button (orange, dark text). The webview
+  tab title gets a leading "● " while waiting. All three go away when the state ends. Respect
+  `prefers-reduced-motion`: no pulse then. Under it,
   the session title · repo in small dim text. Data comes from what the extension already has: `SessionEntry`
   (`ctxUsed`, `contextDetail`, `model`, `effort`) and the provider's last `Snapshot` (`fiveLeft`, `weekLeft`
   shown as used = 100 − left, `limitsStale` → drawn fainter with `~`, as the Usage view does). Missing values

@@ -1,5 +1,5 @@
-<h2>B + A's colors, with a session header</h2>
-<p class="subtitle">B's layout and fonts, A's colors. Tool lines: blue text with no border or background, plus a thin line on the left. Accents: blue (tools), teal (results / done), orange (question / error). Two panels side by side: Claude and Codex.</p>
+<h2>Final: neutral agent badges, orange limit bar, glow</h2>
+<p class="subtitle">Agent identity is now a neutral letter badge (C / X), no color. Limit bars turn orange only above 80% (Codex weekly 86% on the right). The orange glow and bar appear only while a session waits for you (left).</p>
 
 <style>
   :root { --bg:#1e1e1e; --bg2:#252526; --bg3:#2d2d30; --fg:#cccccc; --fg-hi:#e6e6e6; --dim:#8b8b8b;
@@ -23,7 +23,7 @@
   .seg span.on { background:#0e639c; color:#fff; }
   .title { padding:6px 14px 0; font:12px system-ui,sans-serif; color:var(--dim); }
 
-  .bd { font:15px/1.65 Georgia,"Iowan Old Style",serif; padding:14px 18px 18px; height:470px; overflow:hidden; }
+  .bd { font:15px/1.65 Georgia,"Iowan Old Style",serif; padding:14px 18px 18px; height:430px; overflow:auto; }
   .u { background:var(--bg3); border-radius:14px; padding:8px 14px; display:inline-block; font:14px/1.5 system-ui,sans-serif; color:var(--fg-hi); margin-bottom:14px; }
   .tool { font:12.5px/1.5 Consolas,"Cascadia Code",monospace; color:var(--blue-t); border-left:2px solid var(--blue); padding:1px 0 1px 9px; margin:8px 0; }
   .tool b { color:var(--blue); font-weight:600; }
@@ -38,12 +38,20 @@
   .num { text-align:right; font-variant-numeric:tabular-nums; }
   .img { width:230px; height:125px; border-radius:12px; background:linear-gradient(135deg,#eef1f7,#dfe5ef); margin:10px 0; box-shadow:0 4px 14px rgba(0,0,0,.35); }
   code { font:13px Consolas,monospace; color:var(--blue-t); background:#2a2a2a; padding:1px 5px; border-radius:4px; }
+  .tab { font:12px system-ui,sans-serif; color:#ccc; background:#2d2d2d; padding:5px 12px; border-bottom:1px solid #3c3c3c; }
+  .tab .o { color:var(--orange); }
+  .p.waiting { border-color:rgba(240,136,62,.65); box-shadow:0 0 0 1px rgba(240,136,62,.35), 0 0 18px rgba(240,136,62,.28); animation:pulse 1.6s ease-out 1; }
+  @keyframes pulse { 0%{ box-shadow:0 0 0 1px rgba(240,136,62,.7), 0 0 34px rgba(240,136,62,.6);} 100%{ box-shadow:0 0 0 1px rgba(240,136,62,.35), 0 0 18px rgba(240,136,62,.28);} }
+  .ask { background:rgba(240,136,62,.08); border-radius:0 8px 8px 0; box-shadow:0 0 14px rgba(240,136,62,.25); padding:8px 12px 8px 10px; }
+  .ask button { margin-left:10px; font:12px system-ui; background:var(--orange); color:#1e1e1e; border:0; border-radius:5px; padding:2px 9px; cursor:pointer; }
+  .badge { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:5px; background:#3a3a3a; color:#e6e6e6; font:700 11px system-ui; margin-right:6px; vertical-align:-3px; }
+  .hd .meter.hot { color:#ffb27a; }
 </style>
 
 <div class="two">
-  <div class="p">
+  <div class="p waiting"><div class="tab"><span class="o">●</span> nutrition-plan</div>
     <div class="hd">
-      <span class="ag"><span class="dot" style="background:var(--orange)"></span>Claude</span>
+      <span class="ag"><span class="badge">C</span>Claude</span>
       <span class="m">Opus 5.5 · high</span>
       <span class="sep">|</span>
       <span class="meter">ctx <span class="bar"><i style="width:18%;background:var(--teal)"></i></span> 18% · 180k / 1M</span>
@@ -63,18 +71,18 @@
         <tr><td>Very active</td><td class="num">3,300</td><td class="num">180</td><td>−400/+250</td></tr></table>
       <div class="tool"><b>playwright</b> take_screenshot · localhost:3000/plan</div>
       <div class="img"></div>
-      <div class="ask"><b>Waiting in terminal:</b> permission for <code>npm run build</code></div>
+      <div class="ask"><b>Waiting in terminal:</b> permission for <code>npm run build</code><button>Answer in terminal</button></div>
     </div>
   </div>
 
-  <div class="p">
+  <div class="p"><div class="tab">AUTOM-02 cleanup</div>
     <div class="hd">
-      <span class="ag"><span class="dot" style="background:var(--teal)"></span>Codex</span>
+      <span class="ag"><span class="badge">X</span>Codex</span>
       <span class="m">GPT-6-Luna · high</span>
       <span class="sep">|</span>
       <span class="meter">ctx <span class="bar"><i style="width:42%;background:var(--teal)"></i></span> 42% · 108k / 258k</span>
       <span class="meter">5h <span class="bar"><i style="width:12%;background:var(--blue)"></i></span> 12%</span>
-      <span class="meter">wk <span class="bar"><i style="width:8%;background:var(--blue)"></i></span> 8%</span>
+      <span class="meter hot">wk <span class="bar"><i style="width:86%;background:var(--orange)"></i></span> 86%</span>
       <span class="right"><span class="seg"><span>Terminal</span><span class="on">Panel</span></span></span>
     </div>
     <div class="title">AUTOM-02 cleanup · your-plugin-stack-react</div>
