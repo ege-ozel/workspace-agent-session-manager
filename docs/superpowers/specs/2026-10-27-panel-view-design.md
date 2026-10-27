@@ -52,16 +52,17 @@ extra view of the same session, not a replacement.
   other session (closed, open in the agent's own panel / app, or an agent typed into a shell) the panel is
   **read-only**: the message box is replaced by a line saying why, with "Resume in terminal" when the session
   is closed and the provider can resume it.
-- **Sending while the agent works: straight to the terminal by default** (user's decision). Enter sends at
-  once, exactly like typing into the terminal; both TUIs already queue input typed during a turn. Known risk,
-  stated in README: if the terminal is showing a permission prompt at that moment, Claude takes the Enter as
-  its default "Yes". For those who want it safe, a setting `workspaceAgentSessions.panelSend`
-  (`"immediate"` default | `"afterTurn"`): with `afterTurn`, a message sent mid-turn waits in the panel as
-  "queued" (cancellable) and goes to the terminal only once the turn has ended. "Turn ended" per agent:
-  - Claude: the pid record's `status` is `idle` (already read: `SessionEntry.busy`), and the transcript's last
-    assistant message is not a `tool_use` still waiting for its `tool_result`.
-  - Codex: in the rollout, the last `event_msg` `task_started` has a matching `task_complete` after it.
-  So `readTranscript` also reports `turnOpen: boolean`; when it cannot tell, it reports open.
+- **Sending while the agent works: straight to the terminal** (user's decision). Enter sends at once, exactly
+  like typing into the terminal; both TUIs already take input typed during a turn.
+- **Except while a question is on screen.** Claude's permission prompt takes Enter as its default "Yes", so text
+  typed then could approve a tool call. Claude Code records that state: its pid record
+  (`sessions/<pid>.json`) has `status: "waiting"` and a `waitingFor` reason (seen in the 2.1.x binary:
+  "dialog open", "input needed", "sandbox request", ...) while a dialog / permission prompt is open, else
+  `busy` / `idle`. Then the panel shows a bar "The terminal is asking: <waitingFor>" with an "Answer in
+  terminal" button, and a message sent meanwhile is held in the panel as "queued" (cancellable) and typed into
+  the terminal once the status leaves `waiting`. Expose it as a new optional `SessionEntry.waitingFor?: string`
+  filled by the Claude provider (verify the field in a real session with a permission prompt open).
+  Codex records no such state, so its sends always go straight through (the user runs Codex without prompts).
 - **Keys**: Enter and Ctrl+Enter both send (the user sends mid-turn with Ctrl+Enter in Claude Code and expects
   the same here). **Multi-line input** (my call): Shift+Enter adds a line. A multi-line message is sent wrapped in bracketed
   paste (`ESC[200~` … `ESC[201~`, then Enter), so the TUI takes it as one pasted block rather than one submit
@@ -76,7 +77,7 @@ Turning a transcript into items is agent-specific, so it is a new **optional pro
 `src/api.ts` (capability-driven like the others: no capability, no Panel action):
 
 ```ts
-readTranscript?(file: string, from?: number): Promise<{ items: ChatItem[]; next: number; turnOpen: boolean }>
+readTranscript?(file: string, from?: number): Promise<{ items: ChatItem[]; next: number }>
 ```
 
 `from` / `next` = byte offset, so live updates only parse what was appended. `ChatItem` is a small,
