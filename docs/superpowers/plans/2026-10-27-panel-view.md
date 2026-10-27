@@ -183,3 +183,12 @@
 - [ ] **Step 2:** `npm run package`; `unzip -l` the `.vsix`: contains `media/panel.js`, `media/panel.css`, `out/panel/*`; no `test/`, `docs/`, `src/`.
 - [ ] **Step 3:** `code --install-extension workspace-agent-session-manager-0.31.0.vsix --force`, reload, repeat the Task 4/5 manual checks once on the installed build.
 - [ ] **Step 4: Commit** `0.31.0: Panel view` (do not push; the orchestrator reviews first).
+
+## Added during execution (user requests, 2026-10-27)
+
+- **Task 5b** (684c281): folding sections open and close with a 220 ms `cubic-bezier(.2,.7,.2,1)` height transition;
+  a click mid-way turns round; none under `prefers-reduced-motion`.
+- **Task 5c** (97c7cef): image items keep only file + line offset + index (`load()`), read on scroll. 135 MB copy:
+  retained heap +38 MB → +2 MB.
+- **Task 5d** (a4c926c): `StatCache` per file by `{mtime, size}` for title / context / cwd; liveness never cached.
+  Repeat listing: Claude 56 → 3 ms, Codex 32 → 5 ms on copies.
