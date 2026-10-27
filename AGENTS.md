@@ -85,9 +85,10 @@ UI surfaces
   read-only). While Claude's pid record says `status: "waiting"` (`SessionEntry.waitingFor`) Enter would answer the
   agent's question, so text is held in a queue and typed after the next *fresh* check (`PanelHost.fresh` re-lists the
   open sessions; the cached entry can be seconds old). Control characters are stripped from what is typed (an Esc
-  could end a bracketed paste early). Codex has no such state. The header's ◐ button flips the background between the
-  editor's and the terminal's: `bg` message → globalState `panelTerminalBackground` → every state message carries
-  `termBg` → `:root.term` in `panel.css` (all panel colours derive from `--bg`). Sending from a panel whose session is closed
+  could end a bracketed paste early). Codex has no such state. The header's ◐ button cycles the look (editor / terminal / dark):
+  `bg` message → globalState `panelTheme` → every state message carries `theme` → `body.term` / `body.dark` in
+  `panel.css` (every colour derives from the `--bg`, `--fg`, `--side`, ... variables defined on `body`, never straight
+  from `--vscode-*`). Sending from a panel whose session is closed
   (`SessionPanel.resumeWith`) resumes it through `PanelHost.resume`, queues the text and types it once a fresh listing
   says the session is live (the terminal's first keystrokes are lost before that; 60 s cap). Pasted pictures: webview
   card + `pasteImage` → temp file in `os.tmpdir()/agent-sessions-paste`; the path is appended to the sent text.
