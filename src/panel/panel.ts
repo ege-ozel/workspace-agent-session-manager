@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ChatItem, Provider, SessionEntry, Snapshot } from '../api';
+import { terminalText, sendState } from './send';
 import { FIRST_BATCH, headerOf, toView } from './view-model';
 
 export { FIRST_BATCH, toView } from './view-model';
@@ -17,6 +18,10 @@ export interface PanelHost {
   resume(providerId: string, id: string): void;
   /** The provider's last Snapshot, for the header's 5h / wk bars. */
   snapshot(providerId: string): Snapshot | undefined;
+  /** The session re-read right now (not the cached entry); undefined when it is not among the open ones. */
+  fresh(providerId: string, id: string): Promise<SessionEntry | undefined>;
+  /** The session a terminal of ours is on now (it moves on after /clear), or undefined once it is not ours any more. */
+  terminalSessionId(t: vscode.Terminal): string | undefined;
 }
 
 const panels = new Map<string, SessionPanel>();
@@ -34,6 +39,8 @@ export function updatePanels(): void {
   panels.forEach(x => x.postState());
 }
 
+export const hasPanel = (providerId: string) => [...panels.keys()].some(k => k.startsWith(providerId + ':'));
+
 export function disposePanels(): void {
   [...panels.values()].forEach(x => x.dispose());
 }
@@ -49,6 +56,11 @@ class SessionPanel {
   private again = false;
   private disposed = false;
   private session: SessionEntry;
+  /** The last terminal of ours seen on this session; after /clear the host says it is on another one. */
+  private bound?: vscode.Terminal;
+  /** Messages sent while the terminal shows a question, typed once it is answered. */
+  private queue: string[] = [];
+  private flushing = false;
   private debounce?: NodeJS.Timeout;
   private readonly poll: NodeJS.Timeout;
   private watcher?: fs.FSWatcher;
@@ -91,16 +103,74 @@ class SessionPanel {
 <link rel="stylesheet" href="${uri('panel.css')}"></head>
 <body><header id="hd"></header>
 <main id="chat"><button id="earlier" hidden>Show earlier</button><div id="items"></div></main>
+<footer id="ft">
+<div id="wait" class="waitbar" hidden><span><b>Waiting in terminal:</b> <span id="why"></span></span><button id="answer">Answer in terminal</button></div>
+<div id="queue"></div>
+<div id="compose"><textarea id="msg" rows="1"></textarea><button id="send">Send</button></div>
+<div id="ro" class="ro" hidden><span id="rowhy"></span><button id="resume" hidden>Resume in terminal</button></div>
+</footer>
 <div id="ov" hidden><div id="ovbox"></div></div>
 <script nonce="${nonce}" src="${uri('panel.js')}"></script></body></html>`;
   }
 
   private post(m: unknown) { if (!this.disposed) void this.panel.webview.postMessage(m); }
 
-  postState() {
+  /** Our terminal on this session, or the one that was until the host reports it moved on or closed. */
+  private terminal(): vscode.Terminal | undefined {
+    const t = this.host.terminal(this.p.id, this.session.id) ?? this.bound;
+    this.bound = t && !t.exitStatus && this.host.terminalSessionId(t) !== undefined ? t : undefined;
+    return this.bound;
+  }
+
+  private sendStateOf(s: SessionEntry | undefined) {
+    const t = this.terminal();
+    return { t, st: sendState(s, t && this.host.terminalSessionId(t)) };
+  }
+
+  postState(flushQueue = true) {
     this.session = this.host.session(this.p.id, this.session.id) ?? this.session;
-    if (this.panel.title !== this.session.title) this.panel.title = this.session.title;
-    this.post({ type: 'state', header: headerOf(this.p.name, this.session, this.host.snapshot(this.p.id)), busy: !!this.session.busy });
+    const s = this.session;
+    const { t, st } = this.sendStateOf(s);
+    const title = (s.waitingFor ? '● ' : '') + s.title;
+    if (this.panel.title !== title) this.panel.title = title;
+    this.post({
+      type: 'state', header: headerOf(this.p.name, s, this.host.snapshot(this.p.id)), busy: !!s.busy,
+      waitingFor: s.waitingFor, canSend: st.canSend, readOnlyReason: st.canSend ? undefined : st.reason,
+      canResume: !t && !s.live && !!this.p.terminal, queue: this.queue,
+    });
+    // The cached entry may be older than flush's own fresh check: flush must not re-trigger itself from it.
+    if (flushQueue && st.canSend && !st.hold && this.queue.length) void this.flush();
+  }
+
+  /** Types one message, after a fresh look at whether that is still right: the answer may have changed meanwhile. */
+  private async trySend(text: string, queueIt: boolean): Promise<'sent' | 'held' | 'refused'> {
+    this.session = (await this.host.fresh(this.p.id, this.session.id)) ?? this.host.session(this.p.id, this.session.id) ?? this.session;
+    const { t, st } = this.sendStateOf(this.session);
+    if (!t || !st.canSend) return 'refused';
+    if (st.hold) { if (queueIt) this.queue.push(text); return 'held'; }
+    t.sendText(terminalText(text), true);
+    return 'sent';
+  }
+
+  private async send(text: string) {
+    const r = await this.trySend(text, true);
+    if (r === 'refused') this.post({ type: 'rejected', text });
+    this.postState();
+  }
+
+  /** In order, each after its own check; the pause lets a question the previous message raised show up first. */
+  private async flush() {
+    if (this.flushing) return;
+    this.flushing = true;
+    try {
+      while (this.queue.length) {
+        if (await this.trySend(this.queue[0], false) !== 'sent') break;
+        this.queue.shift();
+        await new Promise(r => setTimeout(r, 400));
+        if (this.disposed) return;
+      }
+    } finally { this.flushing = false; }
+    this.postState(false);
   }
 
   private schedule() {
@@ -175,6 +245,12 @@ class SessionPanel {
         break;
       case 'resume':
         this.host.resume(this.p.id, this.session.id);
+        break;
+      case 'send':
+        if (typeof m.text === 'string' && m.text.trim()) void this.send(m.text);
+        break;
+      case 'cancel':
+        if (typeof m.index === 'number') { this.queue.splice(m.index, 1); this.postState(); }
         break;
     }
   }

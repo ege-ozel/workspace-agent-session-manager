@@ -165,6 +165,12 @@
         "icon": "$(preview)"
       },
       {
+        "command": "workspaceAgentSessions.openActivePanel",
+        "title": "Open Panel of This Terminal's Session",
+        "category": "Agent Sessions",
+        "icon": "$(preview)"
+      },
+      {
         "command": "workspaceAgentSessions.resumeSession",
         "title": "Resume in Terminal",
         "category": "Agent Sessions",
@@ -405,6 +411,11 @@
           "group": "navigation@53"
         },
         {
+          "command": "workspaceAgentSessions.openActivePanel",
+          "when": "view == terminal && workspaceAgentSessions.agentTerminal",
+          "group": "navigation@49"
+        },
+        {
           "command": "workspaceAgentSessions.cycleMode",
           "when": "view == terminal && workspaceAgentSessions.agentTerminal",
           "group": "navigation@54"
@@ -585,6 +596,10 @@
       "commandPalette": [
         {
           "command": "workspaceAgentSessions.openSessionPanel",
+          "when": "false"
+        },
+        {
+          "command": "workspaceAgentSessions.openActivePanel",
           "when": "false"
         },
         {

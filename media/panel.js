@@ -3,6 +3,7 @@
   const vscode = acquireVsCodeApi();
   const $ = id => document.getElementById(id);
   const chat = $('chat'), list = $('items'), earlier = $('earlier'), hd = $('hd'), ov = $('ov'), ovbox = $('ovbox');
+  const msg = $('msg'), compose = $('compose'), ro = $('ro'), wait = $('wait'), queueBox = $('queue');
   const el = (tag, cls, text) => {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -170,7 +171,50 @@
     right.append(seg);
     row.append(right);
     hd.replaceChildren(row, el('div', 'sub', [h.title, h.repo].filter(Boolean).join(' · ')));
+    msg.placeholder = `Message ${h.agent} · Enter sends, Shift+Enter adds a line`;
+
+    // Waiting for the user: orange glow once when it begins, then steady; the bar stays while it lasts.
+    const waiting = !!m.waitingFor;
+    if (waiting && !document.body.classList.contains('waiting')) {
+      document.body.classList.add('pulse');
+      setTimeout(() => document.body.classList.remove('pulse'), 1700);
+    }
+    document.body.classList.toggle('waiting', waiting);
+    wait.hidden = !waiting;
+    $('why').textContent = m.waitingFor || '';
+
+    compose.hidden = !m.canSend;
+    ro.hidden = m.canSend;
+    $('rowhy').textContent = m.readOnlyReason || '';
+    $('resume').hidden = !m.canResume;
+
+    queueBox.replaceChildren(...(m.queue || []).map((text, i) => {
+      const q = el('div', 'q');
+      const x = el('button', 'x', '×');
+      x.title = 'Cancel this message';
+      x.onclick = () => vscode.postMessage({ type: 'cancel', index: i });
+      q.append(el('span', null, 'queued · ' + text.replace(/s+/g, ' ').slice(0, 100)), x);
+      return q;
+    }));
   }
+
+  // ---- message box -----------------------------------------------------------
+  const grow = () => { msg.style.height = 'auto'; msg.style.height = Math.min(msg.scrollHeight, 160) + 'px'; };
+  function submit() {
+    const text = msg.value;
+    if (!text.trim()) return;
+    vscode.postMessage({ type: 'send', text });
+    msg.value = '';
+    grow();
+  }
+  msg.addEventListener('input', grow);
+  // Enter and Ctrl+Enter send, Shift+Enter adds a line. Not while an IME is composing.
+  msg.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); }
+  });
+  $('send').onclick = submit;
+  $('answer').onclick = () => vscode.postMessage({ type: 'terminal' });
+  $('resume').onclick = () => vscode.postMessage({ type: 'resume' });
 
   // ---- wiring --------------------------------------------------------------
   earlier.onclick = () => vscode.postMessage({ type: 'earlier' });
@@ -185,6 +229,8 @@
     if (m.type === 'items') onItems(m);
     else if (m.type === 'image') showImage(m.ref, m.src);
     else if (m.type === 'state') onState(m);
+    // The host would not type it (the terminal moved or closed meanwhile): give the text back.
+    else if (m.type === 'rejected' && !msg.value.trim()) { msg.value = m.text; grow(); }
   });
   vscode.postMessage({ type: 'ready' });
 })();

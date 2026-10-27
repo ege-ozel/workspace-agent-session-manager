@@ -7,7 +7,7 @@ import { disableLiveLimits, enableLiveLimits, liveLimitsScript, liveLimitsState,
 import { codex } from './providers/codex';
 import { norm, processParents } from './util';
 import { SavedTerminal, resumedCodex, terminalKey } from './terminals';
-import { PanelHost, disposePanels, openPanel as openSessionPanel, updatePanels } from './panel/panel';
+import { PanelHost, disposePanels, hasPanel, openPanel as openSessionPanel, updatePanels } from './panel/panel';
 
 /** Built-in agents. To add one: create src/providers/<agent>.ts exporting a Provider and list it here. */
 const BUILT_IN: Provider[] = [claude, codex];
@@ -66,6 +66,8 @@ function refresh(e: Entry) {
       e.last = s;
       render(e.item, e.p.name, s);
       treeChanged.fire();
+      // A question on screen (Claude's pid record) must reach the panel's message box without the 3 s coalescing.
+      if (hasPanel(e.p.id)) reloadOpenOf(e);
     });
 }
 const refreshAll = () => entries.forEach(refresh);
@@ -98,18 +100,21 @@ function resolveLaunched() {
  * transcript, so it runs on the same coalesced reload as the Projects view.
  */
 function reloadOpen() {
-  for (const e of entries.values()) {
-    Promise.resolve()
-      .then(() => e.p.listSessions?.(pctx, 'open') ?? [])
-      .catch((): SessionEntry[] => [])
-      .then(list => {
-        if (entries.get(e.p.id) !== e) return;
-        e.open = list;
-        usageView.render();
-        resolveLaunched();
-        adoptTerminals();
-      });
-  }
+  for (const e of entries.values()) reloadOpenOf(e);
+}
+
+function reloadOpenOf(e: Entry) {
+  Promise.resolve()
+    .then(() => e.p.listSessions?.(pctx, 'open') ?? [])
+    .catch((): SessionEntry[] => [])
+    .then(list => {
+      if (entries.get(e.p.id) !== e) return;
+      e.open = list;
+      usageView.render();
+      updatePanels();
+      resolveLaunched();
+      adoptTerminals();
+    });
 }
 
 /**
@@ -338,6 +343,14 @@ export function activate(ctx: vscode.ExtensionContext): Api {
       (id?: string, scope?: SessionScope) => showSessions(id, undefined, scope)),
     vscode.commands.registerCommand('workspaceAgentSessions.menu', menu),
     vscode.commands.registerCommand('workspaceAgentSessions.openPanel', openPanel),
+    // The terminal toolbar's button: the panel of the active (ours) terminal's session.
+    vscode.commands.registerCommand('workspaceAgentSessions.openActivePanel', () => {
+      const t = vscode.window.activeTerminal;
+      const info = t && launched.get(t);
+      const s = info?.sessionId ? sessionOf(info.e.p.id, info.sessionId) : undefined;
+      if (info && s && info.e.p.readTranscript) openSessionPanel(panelHost, info.e.p, s, extCtx);
+      else void vscode.window.showInformationMessage('This terminal\u2019s session is not known yet: send its first message, then try again.');
+    }),
     vscode.commands.registerCommand('workspaceAgentSessions.openSessionPanel', (n: PNode) => {
       if (n?.kind === 'session' && n.e.p.readTranscript) openSessionPanel(panelHost, n.e.p, n.s, extCtx);
     }),
@@ -713,6 +726,12 @@ const panelHost: PanelHost = {
     if (s && e?.p.terminal) launch(e, s.cwd, s);
   },
   snapshot: providerId => entries.get(providerId)?.last,
+  // Read right now, for the checks before typing: the cached entry can be seconds old.
+  fresh: async (providerId, id) => {
+    try { return (await entries.get(providerId)?.p.listSessions?.(pctx, 'open'))?.find(s => s.id === id); } catch { return undefined; }
+  },
+  // The session our terminal is on now: resolveLaunched moves it on after /clear or /resume.
+  terminalSessionId: t => launched.get(t)?.sessionId,
 };
 
 /**
@@ -1276,7 +1295,10 @@ function registerProjects(): vscode.Disposable[] {
       const pid = termPids.get(t) ?? launched.get(t)?.pid;
       if (pid !== undefined) { savedTerminals.delete(pid); persistTerminals(); }
       termPids.delete(t);
-      if (!launched.delete(t)) return;
+      const ours = launched.delete(t);
+      // A panel whose terminal is gone must turn read-only at once.
+      updatePanels();
+      if (!ours) return;
       // Killing a terminal is a user action: it must show at once, not on the watcher's coalesced reload.
       reloadProjectsNow();
       // The agent process outlives its terminal by a moment, so this first read can still find it alive
