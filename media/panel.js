@@ -186,7 +186,12 @@
     return s;
   }
 
+  // Terminal / Panel: the terminal opens beside the panel, so say which one is meant to take the typing.
+  let inTerm = false, lastState;
+  function setMode(on) { inTerm = on; if (lastState) onState(lastState); }
+
   function onState(m) {
+    lastState = m;
     const h = m.header;
     const row = el('div', 'hd');
     const ag = el('span', 'ag');
@@ -198,10 +203,12 @@
     if (meters.length) row.append(el('span', 'sep', '|'), ...meters);
     if (m.busy) row.append(el('span', 'busy', '● working…'));
     const seg = el('span', 'seg');
-    const term = el('button', null, 'Terminal');
+    const term = el('button', inTerm ? 'on' : null, 'Terminal');
     term.title = 'Show this session’s terminal';
-    term.onclick = () => vscode.postMessage({ type: 'terminal' });
-    seg.append(term, el('button', 'on', 'Panel'));
+    term.onclick = () => { setMode(true); vscode.postMessage({ type: 'terminal' }); };
+    const pan = el('button', inTerm ? null : 'on', 'Panel');
+    pan.onclick = () => { if (inTerm) { setMode(false); vscode.postMessage({ type: 'back' }); msg.focus(); } };
+    seg.append(term, pan);
     const bg = el('button', 'bgtoggle', '◐');
     bg.title = 'Background: editor / terminal';
     bg.onclick = () => vscode.postMessage({ type: 'bg' });
@@ -210,7 +217,7 @@
     document.documentElement.classList.toggle('term', !!m.termBg);
     row.append(right);
     hd.replaceChildren(row, el('div', 'sub', [h.title, h.repo].filter(Boolean).join(' · ')));
-    msg.placeholder = `Message ${h.agent} · Enter sends, Shift+Enter adds a line`;
+    msg.placeholder = inTerm ? 'The terminal is in front: type there, or click here to come back' : `Message ${h.agent} · Enter sends, Shift+Enter adds a line`;
 
     // Waiting for the user: orange glow once when it begins, then steady; the bar stays while it lasts.
     const waiting = !!m.waitingFor;
@@ -250,6 +257,16 @@
     grow();
   }
   msg.addEventListener('input', grow);
+  msg.addEventListener('focus', () => { if (inTerm) { setMode(false); vscode.postMessage({ type: 'back' }); } });
+  // A pasted picture cannot go into a text box: the host saves it as a file and its path is typed instead.
+  msg.addEventListener('paste', e => {
+    const f = [...(e.clipboardData?.files || [])].find(x => /^image\/(png|jpe?g|gif|webp)$/.test(x.type));
+    if (!f) return;
+    e.preventDefault();
+    const r = new FileReader();
+    r.onload = () => vscode.postMessage({ type: 'pasteImage', mime: f.type, data: String(r.result).split(',')[1] || '' });
+    r.readAsDataURL(f);
+  });
   // Enter and Ctrl+Enter send, Shift+Enter adds a line. Not while an IME is composing.
   msg.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); }
@@ -270,6 +287,12 @@
   window.addEventListener('message', ({ data: m }) => {
     if (m.type === 'items') onItems(m);
     else if (m.type === 'image') showImage(m.ref, m.src);
+    else if (m.type === 'attached') {
+      const at = msg.selectionStart ?? msg.value.length;
+      const pre = msg.value.slice(0, at), sep = pre && !/\s$/.test(pre) ? ' ' : '';
+      msg.setRangeText(sep + m.path + ' ', at, msg.selectionEnd ?? at, 'end');
+      grow(); msg.focus();
+    }
     else if (m.type === 'state') onState(m);
     // The host would not type it (the terminal moved or closed meanwhile): give the text back.
     else if (m.type === 'rejected' && !msg.value.trim()) { msg.value = m.text; grow(); }

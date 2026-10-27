@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ChatItem, Provider, SessionEntry, Snapshot } from '../api';
@@ -269,11 +270,19 @@ class SessionPanel {
       case 'terminal':
         if (!this.host.showTerminal(this.p.id, this.session.id)) this.noTerminal();
         break;
+      case 'back':
+        // The Terminal button showed the terminal beside this panel; coming back puts it away again.
+        void vscode.commands.executeCommand('workbench.action.closePanel');
+        this.panel.reveal(undefined, false);
+        break;
       case 'resume':
         this.host.resume(this.p.id, this.session.id);
         break;
       case 'send':
         if (typeof m.text === 'string' && m.text.trim()) void this.send(m.text);
+        break;
+      case 'pasteImage':
+        if (typeof m.data === 'string' && typeof m.mime === 'string') this.saveImage(m.mime, m.data);
         break;
       case 'bg':
         void this.ctx.globalState.update(TERM_BG_KEY, !this.termBg()).then(updatePanels);
@@ -282,6 +291,23 @@ class SessionPanel {
         if (typeof m.index === 'number') { this.queue.splice(m.index, 1); this.postState(); }
         break;
     }
+  }
+
+  /** A picture pasted into the message box becomes a temp file; the agent reads an image path typed into its prompt. */
+  private saveImage(mime: string, b64: string) {
+    const ext = ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' } as Record<string, string>)[mime];
+    if (!ext || b64.length > 14_000_000) return;
+    const dir = path.join(os.tmpdir(), 'agent-sessions-paste');
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      for (const f of fs.readdirSync(dir)) {
+        const p = path.join(dir, f);
+        if (Date.now() - fs.statSync(p).mtimeMs > 86_400_000) fs.rmSync(p, { force: true });
+      }
+      const file = path.join(dir, `paste-${Date.now()}.${ext}`);
+      fs.writeFileSync(file, Buffer.from(b64, 'base64'));
+      this.post({ type: 'attached', path: file });
+    } catch { /* temp folder not writable: nothing is inserted */ }
   }
 
   /** Nothing of this window holds the session: offer to open it when it is closed, else say where it is. */

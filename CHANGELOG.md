@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.31.4
+
+- Panel: **Terminal / Panel** is a real switch now. *Terminal* shows the terminal and marks itself active, and the message box says to type there; clicking the message box or *Panel* puts the terminal away again. Before, both looked active and text typed into the wrong one.
+
+## 0.31.3
+
+- Panel: paste a picture (Ctrl+V) into the message box. It is saved as a temporary file (`agent-sessions-paste` in the temp folder, cleaned after a day) and its path is put into the message, which the agent reads as an attached image.
+
 ## 0.31.2
 
 - Panel: a **◐** button in the header switches the background between the editor's and the terminal's, so the panel can match the terminal beside it. The choice is shared by all panels and remembered.
