@@ -57,6 +57,10 @@ it is never used for identity or decoration.
   Codex "X", others their name's first letter; no accent colour), model · effort, then **ctx** as a small bar
   (teal) + "18% · 180k / 1M", **5h** and **wk** as small bars (blue) + used %, and the Terminal | Panel switch
   on the right. **Any bar at 80% used or more turns orange** (bar and its label, light orange `#ffb27a` text).
+- **Page layout**: the panel fills its editor tab. The header stays fixed at the top, the message box (and the
+  waiting bar above it) fixed at the bottom; **only the conversation between them scrolls**. Thin scrollbar in
+  the theme's scrollbar colours (`--vscode-scrollbarSlider-*`). The mockup's fixed-height box with its own
+  scrollbar is a mockup artefact, not the design.
 - **Waiting for the user** (Claude `waitingFor` set): the whole panel's border turns orange with a soft glow
   (`box-shadow: 0 0 0 1px rgba(240,136,62,.35), 0 0 18px rgba(240,136,62,.28)`), pulsing **once** (≈1.6 s, a
   stronger glow fading to that) when the state begins, then steady; no looping animation. The bar "Waiting in
