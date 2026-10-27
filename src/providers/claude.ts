@@ -5,7 +5,8 @@ import {
   clampPct, remaining, toMs, parseJson, readJsonFile, mtime, listDir,
   scanBackward, readHead, grabString, inWorkspace, fallbackTitle, pidAlive, norm, appendJsonLine,
 } from '../util';
-import { Focus, Provider, Snapshot, SessionEntry, SessionScope } from '../api';
+import { ChatItem, Focus, Provider, Snapshot, SessionEntry, SessionScope, TranscriptChunk } from '../api';
+import { readLines } from '../transcript';
 import { dataFile, dirOf, liveLimitsState } from './statusline';
 
 export const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
@@ -21,7 +22,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Claude Code names project dirs by replacing every non-alphanumeric char of the cwd with '-'. */
 const encodeCwd = (cwd: string) => cwd.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
 
-interface Live { sessionId: string; cwd?: string; busy: boolean; pid: number; at: number; source?: string }
+interface Live { sessionId: string; cwd?: string; busy: boolean; waitingFor?: string; pid: number; at: number; source?: string }
 
 /** `cli` is a plain terminal, which says nothing; the VS Code panel is worth showing, since we cannot reach it. */
 const sourceOf = (entry?: unknown) =>
@@ -38,7 +39,8 @@ function liveSessions(): Live[] {
       const at = [j.updatedAt, j.startedAt, mtime(file)].find(n => typeof n === 'number') ?? Date.now();
       out.push({
         sessionId: j.sessionId, cwd: typeof j.cwd === 'string' ? j.cwd : undefined,
-        busy: j.status === 'busy', pid: j.pid, at, source: sourceOf(j.entrypoint),
+        busy: j.status === 'busy', waitingFor: j.status === 'waiting' ? String(j.waitingFor ?? 'input') : undefined,
+        pid: j.pid, at, source: sourceOf(j.entrypoint),
       });
     }
   }
@@ -328,7 +330,7 @@ export function listClaudeSessions(scope: SessionScope, windows: Record<string, 
       const c = sessionContext(file, windows);
       const cwd = grabString(readHead(file, 16 * 1024), 'cwd') ?? d;
       out.push({
-        id, title: title || fallbackTitle(id, cwd), cwd, mtime: m, file, live: live.has(id), busy: live.get(id)?.busy, pid: live.get(id)?.pid,
+        id, title: title || fallbackTitle(id, cwd), cwd, mtime: m, file, live: live.has(id), busy: live.get(id)?.busy, waitingFor: live.get(id)?.waitingFor, pid: live.get(id)?.pid,
         ctxUsed: c.ctxUsed, contextDetail: c.detail ?? c.note, model: c.model, effort: c.effort, source: live.get(id)?.source,
       });
     }
@@ -343,11 +345,71 @@ export function listClaudeSessions(scope: SessionScope, windows: Record<string, 
       const dir = enc ? dirs.find(d => d.toLowerCase() === enc) ?? enc : '';
       out.push({
         id: s.sessionId, title: fallbackTitle(s.sessionId, s.cwd), cwd: s.cwd, mtime: s.at,
-        file: path.join(PROJECTS_DIR, dir, s.sessionId + '.jsonl'), live: true, busy: s.busy, pid: s.pid, source: s.source,
+        file: path.join(PROJECTS_DIR, dir, s.sessionId + '.jsonl'), live: true, busy: s.busy, waitingFor: s.waitingFor, pid: s.pid, source: s.source,
       });
     }
   }
   return out.sort((a, b) => b.mtime - a.mtime);
+}
+
+/** One-line argument of a tool call for its chip: the first familiar field, whitespace collapsed. */
+function toolSummary(input: any): string {
+  for (const k of ['file_path', 'command', 'pattern', 'url', 'description']) {
+    if (typeof input?.[k] === 'string') return input[k].replace(/\s+/g, ' ').trim().slice(0, 120);
+  }
+  return '';
+}
+
+const imageOf = (b: any): ChatItem | undefined =>
+  b?.type === 'image' && b.source?.type === 'base64' && typeof b.source.data === 'string'
+    ? { kind: 'image', mime: String(b.source.media_type ?? 'image/png'), data: b.source.data }
+    : undefined;
+
+/** A tool result's content is a string or blocks: images stay in place, all its text becomes one item. */
+function resultItems(b: any): ChatItem[] {
+  if (typeof b.content === 'string') return b.content ? [{ kind: 'toolResult', text: b.content, ...(b.is_error && { error: true }) }] : [];
+  const out: ChatItem[] = [];
+  let text: Extract<ChatItem, { kind: 'toolResult' }> | undefined;
+  for (const c of Array.isArray(b.content) ? b.content : []) {
+    const img = imageOf(c);
+    if (img) out.push(img);
+    else if (c?.type === 'text' && c.text) {
+      if (text) text.text += '\n' + c.text;
+      else {
+        const r: Extract<ChatItem, { kind: 'toolResult' }> = { kind: 'toolResult', text: c.text };
+        if (b.is_error) r.error = true;
+        out.push(text = r);
+      }
+    }
+  }
+  return out;
+}
+
+/** Transcript lines → renderable items. Bookkeeping (titles, system lines, meta messages, thinking) is skipped. */
+export function claudeItems(lines: string[]): ChatItem[] {
+  const out: ChatItem[] = [];
+  for (const line of lines) {
+    const j = parseJson(line);
+    const role = j?.type;
+    if ((role !== 'user' && role !== 'assistant') || j.isMeta) continue;
+    const content = j.message?.content;
+    if (typeof content === 'string') {
+      if (content.trim()) out.push({ kind: role, text: content });
+      continue;
+    }
+    for (const b of Array.isArray(content) ? content : []) {
+      if (b?.type === 'text' && typeof b.text === 'string' && b.text.trim()) out.push({ kind: role, text: b.text });
+      else if (b?.type === 'tool_use' && typeof b.name === 'string') out.push({ kind: 'tool', name: b.name, summary: toolSummary(b.input) });
+      else if (b?.type === 'tool_result') out.push(...resultItems(b));
+      else { const img = imageOf(b); if (img) out.push(img); }
+    }
+  }
+  return out;
+}
+
+export async function readClaudeTranscript(file: string, from = 0): Promise<TranscriptChunk> {
+  const { lines, next } = readLines(file, from);
+  return { items: claudeItems(lines), next };
 }
 
 /** The transcript path of a closed session, validated to be <base>/<project>/<id>.jsonl. */
@@ -407,6 +469,7 @@ export const claude: Provider = {
   openSessionsLabel: 'Open in Claude Code',
   listSessions: (ctx, scope) => listClaudeSessions(scope, ctx.setting<Record<string, number>>('claudeContextWindows') ?? {}),
   deleteSession: s => deleteClaudeSession(s),
+  readTranscript: readClaudeTranscript,
   terminal: (ctx, _cwd, resumeId, o = {}) => ({
     shellPath: claudeExe(ctx.extensionPath('anthropic.claude-code')),
     // Files go in the prompt as @mentions, which Claude Code reads itself.
