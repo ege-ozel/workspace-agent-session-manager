@@ -139,3 +139,11 @@ body.waiting.pulse::after { animation: pulse 1.6s ease-out 1; }
   100% { box-shadow: inset 0 0 0 1px rgba(240, 136, 62, .35), inset 0 0 18px rgba(240, 136, 62, .28); }
 }
 @media (prefers-reduced-motion: reduce) { body.waiting.pulse::after { animation: none; } }
+
+/* Folding sections: the arrow and the content share one duration and curve. */
+details > summary { list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: '▸'; display: inline-block; width: 1.1em; transition: transform 220ms cubic-bezier(.2, .7, .2, 1); }
+details.is-open > summary::before { transform: rotate(90deg); }
+.dc { overflow: hidden; transition: height 220ms cubic-bezier(.2, .7, .2, 1); }
+@media (prefers-reduced-motion: reduce) { .dc, details > summary::before { transition: none; } }

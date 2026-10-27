@@ -86,6 +86,41 @@
     holders.delete(ref);
   }
 
+  // ---- folding sections ------------------------------------------------------
+  // <details> cannot animate its content here (no ::details-content / interpolate-size in this Chromium), so the
+  // summary click is taken over: the content wrapper's height goes between 0 and its natural height.
+  const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function settle(d, dc) {
+    if (!d.classList.contains('is-open')) d.open = false;
+    dc.style.height = '';
+  }
+  function toggle(d, dc) {
+    clearTimeout(d._settle);
+    const want = !d.classList.contains('is-open');
+    d.classList.toggle('is-open', want);
+    if (reduceMotion()) { d.open = want; dc.style.height = ''; return; }
+    if (want && !d.open) { d.open = true; dc.style.height = '0px'; }
+    else dc.style.height = dc.getBoundingClientRect().height + 'px'; // pin where it is: a click mid-way turns it round
+    void dc.offsetHeight;
+    dc.style.height = (want ? dc.scrollHeight : 0) + 'px';
+    // transitionend does not fire when there is no distance to travel
+    d._settle = setTimeout(() => settle(d, dc), 300);
+  }
+  function collapsible(cls, title, body) {
+    const d = el('details', cls);
+    const dc = el('div', 'dc');
+    const sum = el('summary', null, title);
+    dc.append(body);
+    d.append(sum, dc);
+    sum.addEventListener('click', e => { e.preventDefault(); toggle(d, dc); });
+    dc.addEventListener('transitionend', e => {
+      if (e.target !== dc || e.propertyName !== 'height') return;
+      clearTimeout(d._settle);
+      settle(d, dc);
+    });
+    return d;
+  }
+
   // ---- items ---------------------------------------------------------------
   function render(v) {
     switch (v.kind) {
@@ -97,11 +132,9 @@
         return d;
       }
       case 'toolResult': {
-        const d = el('details', v.error ? 'res err' : 'res');
         const first = v.text.split('\n').find(l => l.trim()) || 'result';
-        d.append(el('summary', null, (v.error ? 'error · ' : 'result · ') + first.slice(0, 120)),
+        return collapsible(v.error ? 'res err' : 'res', (v.error ? 'error · ' : 'result · ') + first.slice(0, 120),
           el('pre', null, v.text + (v.more ? `\n… ${v.more} more characters` : '')));
-        return d;
       }
       case 'image': {
         const d = el('div', 'img');
@@ -114,9 +147,7 @@
       }
       case 'note': {
         if (!v.text) return el('div', 'note', v.title);
-        const d = el('details', 'note');
-        d.append(el('summary', null, v.title), el('pre', null, v.text));
-        return d;
+        return collapsible('note', v.title, el('pre', null, v.text));
       }
     }
     return el('div');
