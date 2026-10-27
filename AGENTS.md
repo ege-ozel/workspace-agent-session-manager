@@ -14,7 +14,12 @@ CLIs; no network requests, no telemetry. User-facing docs: [README.md](README.md
 | `src/providers/claude.ts` | Claude Code: reads `~/.claude` (or `$CLAUDE_CONFIG_DIR`). |
 | `src/providers/statusline.ts` | Live Claude limits: installs / removes our Claude Code status line script (no `vscode` import, so node-testable). |
 | `src/providers/codex.ts` | Codex: reads `~/.codex` (or `$CODEX_HOME`); mutations go through the `codex` CLI. |
-| `src/util.ts` | Small fs/JSON/path helpers (`scanBackward` reads JSONL files from the end, `norm` for path comparisons, `pidAlive`, ...). |
+| `src/util.ts` | Small fs/JSON/path helpers (`scanBackward` reads JSONL files from the end, `norm` for path comparisons, `pidAlive`, ...), and `StatCache` (per-file results keyed by mtime + size, for the session lists). |
+| `src/transcript.ts` | JSONL transcript reading for the Panel: `readLines` (from a byte offset, complete lines only, with their offsets), `readLineAt`, `lazyImage` (an image item that holds no picture, only its place in the file). |
+| `src/panel/` | The Panel view. `panel.ts` = the webview panel (vscode); `view-model.ts` = what the webview receives (`toView`, `headerOf`; no `vscode` import); `markdown.ts` = our small Markdown renderer; `send.ts` = what to type and when (`terminalText`, `sendState`). |
+| `media/` | The Panel's webview script and CSS (plain files, no bundler). Loaded through `asWebviewUri`, so they must not be in `.vscodeignore`. |
+| `test/` | `node:test` unit tests against `out/` with synthetic fixtures in `test/fixtures/` (`npm test`). |
+| `docs/superpowers/` | Design notes of the Panel view (spec, plan, mockups); left out of the `.vsix`. |
 | `package.json` | `contributes`: commands, activity bar container + 2 views, menus (inline buttons via `when` clauses), settings. |
 | `CHANGELOG.md` | Release notes, shown on the Marketplace "Changelog" tab. One entry per published version. |
 | `images/` | `icon.svg` = source of `icon.png` (render at 256x256); `activity.svg` = the same gauge as a line icon, no `<mask>` (masks render grainy in the activity bar). `screenshots/` = README pictures, taken from made-up sessions (`CLAUDE_CONFIG_DIR` / `CODEX_HOME` on fake data, a separate `--user-data-dir`), never real ones; left out of the `.vsix`, the Marketplace loads them from GitHub. The maintainer's local `demo/start-demo.ps1` (git-ignored) opens that setup. |
@@ -39,6 +44,8 @@ UI surfaces
    • "Usage" webview (workspaceAgentSessions.view): per agent, 5h / weekly / context bars; from two open sessions on,
      Context splits into one named row per session (click = its terminal, else details)
    • "Projects" tree (workspaceAgentSessions.projects): sessions of all providers grouped by repo
+   • Panel (panel/panel.ts): one editor webview per session, rendered from Provider.readTranscript;
+     the message box types into our terminal for that session (PanelHost, implemented in extension.ts)
 ```
 
 - **Provider isolation**: every provider call is wrapped; one failing provider must never affect another's item.
@@ -65,14 +72,44 @@ UI surfaces
   rule. Claude matches by pid; Codex has none, so it matches by `startedAt` (`ownedThread`, see below).
   Refreshes on active-terminal change. Needs VS Code ≥ 1.93 (`Terminal.shellIntegration`).
 
+- **Panel view** (`src/panel/`, `media/`): optional provider capability `readTranscript(file, from)` → `ChatItem`s
+  and the next byte offset, so a live session parses only what was appended (half-written last line left for the
+  next pass; a file shorter than `from` was replaced: re-read from 0). The agent keeps running in its terminal: the
+  panel never starts a process, it reads the transcript (watching the folder, 300 ms debounce, 5 s poll) and types
+  with `Terminal.sendText`. Webview gets the last 200 items (`FIRST_BATCH`), earlier ones on request; images are
+  `{ref}` placeholders and `ChatItem` image `load()` reads one picture from disk when it scrolls into view (built-in
+  providers keep no base64 in memory; `data` stays for third-party providers). Message text is escaped by the host
+  (`markdown.ts`, `userHtml`); the webview uses `textContent` for everything else; CSP allows only a nonce'd script and
+  `data:` images. **Typing rules** (`send.ts`): only into a terminal in `launched`, and only while the host says that
+  terminal is still on the panel's session (`PanelHost.terminalSessionId`, after `/clear` it is another one →
+  read-only). While Claude's pid record says `status: "waiting"` (`SessionEntry.waitingFor`) Enter would answer the
+  agent's question, so text is held in a queue and typed after the next *fresh* check (`PanelHost.fresh` re-lists the
+  open sessions; the cached entry can be seconds old). Control characters are stripped from what is typed (an Esc
+  could end a bracketed paste early). Codex has no such state.
+- **Session list cache**: `listClaudeSessions` / `listCodexSessions` keep what a file's content decides (title,
+  context, model) in a `StatCache` keyed by mtime + size (Claude also by the `claudeContextWindows` setting); liveness,
+  busy / waiting and Codex titles are asked again every call. A full listing prunes entries of vanished files, an
+  `open` listing never does.
+
 ## Agent data on disk (the non-obvious part)
 
 **Claude Code** (`~/.claude`)
 - Transcripts: `projects/<encoded cwd>/<uuid>.jsonl` + optional sibling folder `<uuid>/` (subagents, tool results).
   Encoded cwd = every non-alphanumeric char → `-`.
-- Open sessions: `sessions/<pid>.json` = `{ pid, sessionId, cwd, status: 'idle' | 'busy', ... }`, valid while the
-  pid is alive. "Open" = a Claude Code process (usually a panel tab) has it loaded. Not time-based. `/clear` rewrites
-  `sessionId` in place to the new session, same pid (seen in 2.1.292); the old transcript is then closed.
+- Open sessions: `sessions/<pid>.json` = `{ pid, sessionId, cwd, status: 'idle' | 'busy' | 'waiting', waitingFor?, ... }`,
+  valid while the pid is alive. "Open" = a Claude Code process (usually a panel tab) has it loaded. Not time-based.
+  `/clear` rewrites `sessionId` in place to the new session, same pid (seen in 2.1.292); the old transcript is then
+  closed. `status: "waiting"` + `waitingFor` (e.g. "dialog open", "input needed", "sandbox request") while a dialog or
+  permission prompt is open: taken from the 2.1.x binary, **not yet confirmed in a real prompt** (check the value
+  seen there). `busy` is false while waiting.
+- Transcript lines the Panel shows (`claudeItems`): `user` / `assistant` with `message.content` blocks `text`,
+  `tool_use`, `tool_result` (its `content` may hold `{type:"image",source:{type:"base64",...}}`: Playwright
+  screenshots), user `image`. Skipped: `thinking`, titles, `system`, `isMeta`. Not typed by the user although `user`:
+  `isCompactSummary` (→ note), `<command-name>` slash commands, `<local-command-stdout>` (ANSI codes and HTML entities),
+  `<bash-input>` / `<bash-stdout>` (the `!` mode), `<task-notification>` (background tasks, the most common),
+  `<system-reminder>` / `<ide_opened_file>` / `<browser_instruction>` / `<local-command-caveat>` (injected, dropped),
+  `[Request interrupted by user]` (→ note). `<pasted_content id=…>` is the user's own paste (voice, clipboard): shown
+  without the tag.
 - 5h / weekly limits are kept in memory only. Claude Code passes them (`rate_limits.five_hour|seven_day`:
   `used_percentage` 0-100, `resets_at` epoch s) to the `statusLine` command's stdin after each reply, documented at
   code.claude.com/docs/en/statusline. Only the terminal UI runs the status line, not the VS Code panel. On Windows the
@@ -96,6 +133,16 @@ UI surfaces
   thread it has loaded; `codex delete/archive` fail while it is held. Detected by a 1-byte read → `EBUSY`
   (Windows only; on macOS/Linux the lock is advisory, so 'open' falls back to "active in the last 24 h").
 - Archive: `codex archive|unarchive <id>` moves rollouts to/from `archived_sessions/` (flat).
+- Lines the Panel shows (`codexItems`): `response_item` with `payload.type` `message` (`input_text` / `output_text` /
+  `input_image` with `image_url: "data:image/png;base64,..."`), `function_call` (`arguments` is a JSON string),
+  `custom_tool_call` (`input`), and their `*_output` (string or block array, images inline). Skipped: `reasoning`,
+  `event_msg`, `turn_context`, `token_usage_record`, `world_state`, `agent_message`, every `developer` message, and
+  `user` messages Codex injected (`<environment_context>`, `# AGENTS.md instructions`, `# Files mentioned by the
+  user` (the image itself stays), `<external_codex_apps_open_page>`, the reviewer's "The following is the Codex agent
+  history…" dump of dozens of text blocks). `compacted` lines → note (their `replacement_history` repeats the old
+  conversation: never rendered), `<hook_prompt>` → note. Left as user bubbles although not typed by the user:
+  `<send_user_message_question_reply>` (the user's answer) and multi-agent "Task notification …" messages. No
+  approval / question state is written to disk, hence no `waitingFor`.
 - Nothing in a rollout identifies the process, so two terminals in one repo cannot be told apart by cwd. `ownedThread`
   uses time instead: a terminal owns the first thread that appeared after it started. Rollout start time comes from
   the file name (**local** time; the stamp inside the file is UTC), and writer locks are counted in because they
@@ -135,9 +182,12 @@ Development Host window running `out/` directly, with breakpoints and `console.l
 window, Ctrl+R reloads the latest build. It overrides the installed copy there only; other windows keep the `.vsix`.
 Package + install only for a release check (the `.vsix` is what users get).
 
-There are no automated tests. Verify provider logic with node against `out/` using a **copy** of the agent's
-data: set `CLAUDE_CONFIG_DIR` / `CODEX_HOME` to a temp folder before `require('./out/providers/...')`.
-Never experiment on the real `~/.claude` / `~/.codex`.
+`npm test` compiles and runs the unit tests (`node:test`, no dev dependencies) in `test/` against `out/`, with
+synthetic fixtures in `test/fixtures/` (no `vscode` import: `panel/panel.ts` itself is not covered, so its pure parts
+live in `view-model.ts` / `send.ts`). Provider tests set `CLAUDE_CONFIG_DIR` / `CODEX_HOME` to a temp folder before
+`require('../out/providers/...')`; do the same for any experiment with a **copy** of real data. Never experiment on
+the real `~/.claude` / `~/.codex`. The webview (`media/`) has no automated test: check it by loading `panel.css` /
+`panel.js` in a browser page with a stubbed `acquireVsCodeApi` and posted messages, and in the F5 host.
 
 ## Release (Marketplace)
 
@@ -160,10 +210,15 @@ Smoke-tested inside VS Code on Windows with the installed 0.30.10 `.vsix` (2026-
 - [ ] The same for Codex (+, ▶, archive / unarchive / delete): not recorded.
 
 Known limits, candidates for later:
-- Listing reads every transcript on each reload; with hundreds of sessions, cache per file by mtime.
+- The first listing still reads the end of every transcript (later ones only files whose mtime / size changed).
+  Codex `open` listing still walks every day folder and probes each main rollout's writer lock.
+- The Panel reads a transcript's whole file on open (≈0.6 s for 135 MB, transient memory); if that ever hurts, read
+  backwards from the end instead.
 - Codex "open" detection is Windows-only (lock read → `EBUSY`); macOS/Linux fall back to "last 24 h".
 - Sessions open in the Claude Code panel / Codex app can't be closed from here (by design: only our terminals).
-- No automated tests.
+- Unit tests cover the pure parts only; the webview, the typing rules inside `panel.ts` and the terminal wiring are
+  checked by hand (Panel: real permission prompt `waitingFor` value, multi-line paste in both agents, `/clear`,
+  terminal close, reload).
 - Live Claude limits: verified on Windows in real Claude Code terminal sessions (2026-10-06: "ctx · 5h · wk" under
   the prompt, Usage view source "Claude Code status line · just now"). macOS / Linux (`sh`) only run by hand.
 - No `vscode:uninstall` hook: uninstalling with live limits on leaves our status line in place (README says so).

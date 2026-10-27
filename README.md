@@ -11,6 +11,7 @@ Every AI coding agent session of your workspace in one place, grouped by repo, w
 ## Features
 
 - **Projects view**: every agent's sessions grouped by repo, multi-root workspaces included. Start, resume, close, rename, archive and delete sessions; the active terminal's session is highlighted, and one already running opens its terminal instead of starting twice.
+- **Panel view**: any session as a conversation in an editor tab, next to its terminal: Markdown tables as real tables (copy as cells, enlarge), images you can see and enlarge, and a message box that types into the session's terminal.
 - **Status bar**: context / 5h / weekly usage per agent, following the session in the active terminal. Turns yellow at 80%, red at 95%.
 - **Live Claude limits** (opt-in): fresh 5h / weekly numbers on every Claude Code reply, from Claude Code's own status line. Or paste them from `/usage`.
 - **Usage view**: the same numbers as bars with reset times; with several open sessions, one context bar per session.
@@ -97,6 +98,20 @@ The Claude Code panel only starts and lists sessions of the **first** workspace 
 
 ![New session, one step at a time: agent, repo, model, effort](images/screenshots/new-session.png)
 
+## Panel view
+
+A terminal can't show images, and it smears wide Markdown tables. The **Panel** shows the same session as a conversation in an editor tab (so it can be split and dragged like any editor), next to its terminal. The agent keeps running in its terminal: the panel only reads the transcript the agent already writes, and types into that terminal. Both views always agree, and everything the terminal offers (permission prompts, `/model` menus, plan approvals) stays there. Terminal mode is unchanged.
+
+Open it with the **preview** button on a session row in the Projects view (also in its right-click menu), or with the button in the toolbar of an agent terminal started from here.
+
+- **Tables** are real tables. Hover one for **Copy** (as cells: pastes into Excel / Sheets; the text stays selectable too) and **⤢** (enlarge).
+- **Images** from tool results (screenshots) and from your messages show as thumbnails when scrolled into view; click one to enlarge it. An enlarged table or image closes with a click outside it, a click on the image, or Esc.
+- **Tool calls** are one-line chips, results are folded. Notes that neither you nor the agent wrote (a compaction, a background task, an interrupted request) are folded and dim.
+- **Header**: agent, model and effort, and the session's context, the 5-hour and the weekly allowance as bars (blue / teal; any bar at 80% or more turns orange). Claude's 5h / weekly need *Live Claude limits*; a missing value is left out. The **Terminal** button shows the session's terminal.
+- **Message box**: Enter or Ctrl+Enter sends the text to the terminal as if you typed it, Shift+Enter adds a line. A message of several lines is pasted as one block. It works only for terminals started from here; any other session (closed, open in the agent's own panel, or an agent typed into a shell) is read-only, with *Resume in terminal* for a closed one. A panel also turns read-only when its terminal is closed or moves on to another session (`/clear`, `/resume`).
+- **While the terminal asks a question** (Claude: a permission prompt or a menu is open), Enter would answer it, so the panel does not type: it shows *Waiting in terminal* with an **Answer in terminal** button, glows orange, and holds what you send as *queued* (cancel with ×). It is typed once the question is answered. Codex records no such state, so its messages always go straight through.
+- Long sessions open fast: the panel loads the last 200 items first (*Show earlier* for the rest), and images are read from the transcript only when they come into view.
+
 ## Sessions list
 
 Click a status bar item → **Claude sessions... / Codex sessions...** (or *Agent Sessions: Show Sessions...*):
@@ -134,7 +149,7 @@ While an agent terminal started from here is active, its toolbar gets buttons fo
   - *Live Claude limits*: Claude Code's `statusLine` setting and `~/.claude/agent-sessions/`, see above.
   - *Claude limits from /usage*: `~/.claude/agent-sessions/usage-pasted.json` (the numbers you confirmed). The clipboard is read only when you run that command.
 - **Open sessions are never deleted, archived or moved** (the agent would keep writing to them). Close the tab or quit Codex first.
-- **Runs** the agents' CLIs, in terminals you start from here. It closes only terminals it started itself.
+- **Runs** the agents' CLIs, in terminals you start from here. It closes only terminals it started itself, and the Panel's message box types only into those.
 - **Lists processes** (process id and parent id only, via `Get-CimInstance Win32_Process` on Windows, `ps` elsewhere) once per new Claude Code process, to find which terminal it runs in.
 
 ## Known limitations
@@ -144,7 +159,8 @@ While an agent terminal started from here is active, its toolbar gets buttons fo
 - The Claude Code panel serves the first workspace folder only. Use a terminal session or **⧉** for other repos.
 - Sessions open in the Claude panel or the Codex app can't be closed from here.
 - Codex reports no process id. Terminals started from here keep their mapping across reloads; older direct resume terminals can be recovered from their launch arguments. Codex typed into a shell, and new Codex terminals launched before 0.30.10 and already reloaded, cannot be matched exactly.
-- Listing reads every transcript, so the Projects view may take a moment with many hundreds of sessions.
+- The first listing reads the end of every transcript (later ones only the files that changed), so the Projects view may take a moment the first time with many hundreds of sessions.
+- The Panel opens a session by reading its whole transcript once, which takes about a second for a 100 MB one.
 
 ## Adding an agent
 
@@ -189,6 +205,7 @@ Each provider is isolated: if one throws or returns bad data, only its own item 
 
 ```
 npm install
+npm test          # compile + unit tests (node:test, synthetic fixtures)
 npm run package   # clean build → workspace-agent-session-manager-<version>.vsix
 code --install-extension workspace-agent-session-manager-<version>.vsix
 ```

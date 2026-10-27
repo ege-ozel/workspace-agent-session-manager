@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.31.0
+
+- **Panel view**: open any session as a conversation in an editor tab, next to its terminal (the **preview** button on a Projects row, its right-click menu, or the toolbar of an agent terminal started from here). Markdown tables are real tables with *Copy* (as cells) and *Enlarge*; images from tool results and your messages show as thumbnails and enlarge on click; tool calls are one-line chips and results fold open smoothly.
+- **Message box** in the Panel: Enter or Ctrl+Enter types the text into the session's terminal, Shift+Enter adds a line, several lines are pasted as one block. Only terminals started from here can be typed into; other sessions are read-only, with *Resume in terminal* for a closed one. A panel turns read-only when its terminal closes or moves to another session (`/clear`, `/resume`).
+- While Claude's terminal shows a question (permission prompt, menu) the Panel does not type, since Enter would answer it: it shows *Waiting in terminal*, glows orange and holds your message until the question is answered.
+- Header with model, effort, context, 5h and weekly bars (orange from 80%).
+- Long sessions open fast: the last 200 items first, images read from the transcript only when scrolled into view (about 2 MB of memory for a 135 MB transcript instead of about 38 MB).
+- Session lists are cached per file by modification time and size: refreshes no longer re-read every transcript.
+- New API for other extensions: `Provider.readTranscript` (enables the Panel for a provider), `ChatItem`, `SessionEntry.waitingFor`.
+- Unit tests (`npm test`).
+
 ## 0.30.17
 
 - Projects view: right-click a repo for *Move Up* / *Move Down* / *Move to Top*; the order is remembered.
