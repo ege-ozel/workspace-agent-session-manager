@@ -39,7 +39,7 @@ the behaviour (Copy / ⤢ / overlay).
 **Colour rule (teal & orange, split-complementary):** cool colours carry context, warm carries "you are
 needed". Blue and teal are two shades of the cool side and never the only thing telling two meanings apart
 (each also has a label or icon). **Orange appears only when something needs the user**, so it keeps its pull:
-it is never used for identity or decoration.
+it is never used for identity or decoration. Extended by the user after trying 0.31.1 (2026-10-27): orange also marks the user's own side and live activity (thin left line on user bubbles, the message box focus line, queued messages, a slow-breathing "working…"). The waiting glow stays the only orange *glow*.
 
 - **Layout and type (from "B, airy")**: reading text 15px / line-height 1.65 in a serif stack
   (`Georgia, "Iowan Old Style", serif`); body padding 14px 18px; user messages as rounded bubbles (radius 14px,
