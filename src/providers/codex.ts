@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  remaining, toMs, parseJson, readJsonFile, mtime, listDir, scanBackward, readHead, grabString, inWorkspace, fallbackTitle, norm, appendJsonLine,
+  remaining, toMs, parseJson, readJsonFile, mtime, listDir, scanBackward, readHead, grabString, inWorkspace, fallbackTitle, norm, appendJsonLine, StatCache, statOf,
 } from '../util';
 import { lazyImage, readLines } from '../transcript';
 import { ChatItem, Focus, LaunchChoices, LaunchModel, Provider, ProviderContext, Snapshot, SessionEntry, SessionScope, TranscriptChunk } from '../api';
@@ -33,7 +33,7 @@ function threadLoaded(id: string): boolean {
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
-interface Rollout { file: string; id: string; m: number }
+interface Rollout { file: string; id: string; m: number; size: number }
 interface Meta { main: boolean; cwd?: string; origin?: string }
 
 /** Header (session_meta) of a rollout never changes, so it is cached per file. */
@@ -124,8 +124,8 @@ function rollouts(days = Infinity): Rollout[] {
 function rolloutIn(dir: string, name: string): Rollout | undefined {
   const id = /^rollout-.*\.jsonl$/.test(name) ? UUID.exec(name.slice(-42))?.[0] : undefined;
   const file = path.join(dir, name);
-  const m = id ? mtime(file) : undefined;
-  return id && m !== undefined ? { file, id, m } : undefined;
+  const st = id ? statOf(file) : undefined;
+  return id && st ? { file, id, m: st.m, size: st.size } : undefined;
 }
 
 const archivedRollouts = () => listDir(ARCHIVED_DIR)
@@ -252,16 +252,21 @@ const sourceOf = (origin?: string) => (!origin || origin === 'codex-tui' ? undef
 
 const OPEN_WINDOW_MS = 24 * 3600_000;
 
+/** What a rollout alone decides (context, model); the title (session_index.jsonl) and liveness are asked each time. */
+export const codexListCache = new StatCache<ReturnType<typeof sessionContext>>();
+
 /** 'open': active within the last 24 hours, or still loaded in a running Codex process. */
 export function listCodexSessions(scope: SessionScope): SessionEntry[] {
   const names = threadNames();
   const since = Date.now() - OPEN_WINDOW_MS;
-  return (scope === 'archived' ? archivedRollouts() : rollouts())
-    .filter(r => meta(r.file).main)
+  const all = (scope === 'archived' ? archivedRollouts() : rollouts()).filter(r => meta(r.file).main);
+  // An 'open' listing sees only some of the files: forgetting is for a full one.
+  if (scope !== 'open') codexListCache.prune((scope === 'archived' ? ARCHIVED_DIR : SESSIONS_DIR) + path.sep, new Set(all.map(r => r.file)));
+  return all
     .map(r => ({ r, live: threadLoaded(r.id) }))
     .filter(({ r, live }) => scope !== 'open' || live || r.m >= since)
     .map(({ r, live }) => {
-      const c = sessionContext(r.file);
+      const c = codexListCache.get(r.file, r, '', () => sessionContext(r.file));
       return {
         id: r.id, title: names.get(r.id) || fallbackTitle(r.id, meta(r.file).cwd), cwd: meta(r.file).cwd,
         mtime: r.m, file: r.file, live, ctxUsed: c.ctxUsed, contextDetail: c.detail, model: c.model, effort: c.effort, source: sourceOf(meta(r.file).origin),

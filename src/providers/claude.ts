@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import {
   clampPct, remaining, toMs, parseJson, readJsonFile, mtime, listDir,
-  scanBackward, readHead, grabString, inWorkspace, fallbackTitle, pidAlive, norm, appendJsonLine,
+  scanBackward, readHead, grabString, inWorkspace, fallbackTitle, pidAlive, norm, appendJsonLine, StatCache, statOf,
 } from '../util';
 import { ChatItem, Focus, Provider, Snapshot, SessionEntry, SessionScope, TranscriptChunk } from '../api';
 import { lazyImage, readLines } from '../transcript';
@@ -312,8 +312,13 @@ export function getClaude(folders: string[], windows: Record<string, number>, ma
   return snap;
 }
 
+/** What a transcript alone decides about its session; liveness is never cached (see StatCache). */
+export const claudeListCache = new StatCache<{ title?: string; c: SessionContext; cwd: string }>();
+
 export function listClaudeSessions(scope: SessionScope, windows: Record<string, number>): SessionEntry[] {
   const live = new Map(liveSessions().map(s => [s.sessionId, s]));
+  const winKey = JSON.stringify(windows);
+  const files = new Set<string>();
   const base = scope === 'archived' ? ARCHIVE_DIR : PROJECTS_DIR;
   const out: SessionEntry[] = [];
   const seen = new Set<string>();
@@ -324,17 +329,21 @@ export function listClaudeSessions(scope: SessionScope, windows: Record<string, 
       if (!name.endsWith('.jsonl') || !UUID.test(id) || (scope === 'open' && !live.has(id))) continue;
       seen.add(id);
       const file = path.join(dir, name);
-      const m = mtime(file);
-      if (m === undefined) continue;
-      const title = transcriptTitle(file);
-      const c = sessionContext(file, windows);
-      const cwd = grabString(readHead(file, 16 * 1024), 'cwd') ?? d;
+      const st = statOf(file);
+      if (!st) continue;
+      files.add(file);
+      const { title, c, cwd } = claudeListCache.get(file, st, winKey, () => ({
+        title: transcriptTitle(file), c: sessionContext(file, windows), cwd: grabString(readHead(file, 16 * 1024), 'cwd') ?? d,
+      }));
+      const m = st.m;
       out.push({
         id, title: title || fallbackTitle(id, cwd), cwd, mtime: m, file, live: live.has(id), busy: live.get(id)?.busy, waitingFor: live.get(id)?.waitingFor, pid: live.get(id)?.pid,
         ctxUsed: c.ctxUsed, contextDetail: c.detail ?? c.note, model: c.model, effort: c.effort, source: live.get(id)?.source,
       });
     }
   }
+  // An 'open' listing sees only some of the files: forgetting is for a full one.
+  if (scope !== 'open') claudeListCache.prune(base + path.sep, files);
   // Claude Code writes the transcript only once a session has a first message, so a just-opened
   // session has none. List it anyway, or the view's "open" count disagrees with the running processes.
   if (scope !== 'archived') {

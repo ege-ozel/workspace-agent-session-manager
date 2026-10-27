@@ -146,3 +146,35 @@ export function processParents(): Promise<Map<number, number>> {
 /** Title for an unnamed session: its folder name plus a short id. */
 export const fallbackTitle = (id: string, cwd?: string) =>
   cwd ? `${path.basename(cwd)} (${id.slice(0, 8)})` : id;
+
+/** mtime (ms) and size of a file, or undefined if it is gone. Size too: on Windows a writer can append without touching mtime. */
+export function statOf(file: string): { m: number; size: number } | undefined {
+  try { const st = fs.statSync(file); return { m: st.mtimeMs, size: st.size }; } catch { return undefined; }
+}
+
+/**
+ * Per-file results for the session lists, valid while a file's { mtime, size } (and `key`, e.g. the settings it was
+ * computed with) stay the same: listing every session otherwise reads the tail of every transcript on every refresh.
+ * Only what the file's content decides belongs here; whether a session is live is asked again each time.
+ */
+export class StatCache<T> {
+  /** How many times a value was computed (a miss); read by the tests. */
+  computes = 0;
+  private entries = new Map<string, { m: number; size: number; key: string; v: T }>();
+
+  get size() { return this.entries.size; }
+
+  get(file: string, st: { m: number; size: number }, key: string, compute: () => T): T {
+    const e = this.entries.get(file);
+    if (e && e.m === st.m && e.size === st.size && e.key === key) return e.v;
+    this.computes++;
+    const v = compute();
+    this.entries.set(file, { m: st.m, size: st.size, key, v });
+    return v;
+  }
+
+  /** Forgets the files under `prefix` that a full listing did not find any more (deleted, archived). */
+  prune(prefix: string, seen: Set<string>) {
+    for (const f of [...this.entries.keys()]) if (f.startsWith(prefix) && !seen.has(f)) this.entries.delete(f);
+  }
+}
