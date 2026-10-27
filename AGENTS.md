@@ -85,7 +85,9 @@ UI surfaces
   read-only). While Claude's pid record says `status: "waiting"` (`SessionEntry.waitingFor`) Enter would answer the
   agent's question, so text is held in a queue and typed after the next *fresh* check (`PanelHost.fresh` re-lists the
   open sessions; the cached entry can be seconds old). Control characters are stripped from what is typed (an Esc
-  could end a bracketed paste early). Codex has no such state.
+  could end a bracketed paste early). Codex has no such state. The header's ◐ button flips the background between the
+  editor's and the terminal's: `bg` message → globalState `panelTerminalBackground` → every state message carries
+  `termBg` → `:root.term` in `panel.css` (all panel colours derive from `--bg`).
 - **Ways into the Panel**: the Projects row button / menu (`openSessionPanel`), the terminal toolbar (`openActivePanel`),
   the palette's `openPanelPick` (open sessions, then ≤ 50 latest closed; `pickItems`), and "<agent> in terminal + Panel"
   in the new-session chain (`newSessionFlow` → `launch` → `panelWhenKnown`). That last one asks nothing new: it polls

@@ -202,8 +202,12 @@
     term.title = 'Show this session’s terminal';
     term.onclick = () => vscode.postMessage({ type: 'terminal' });
     seg.append(term, el('button', 'on', 'Panel'));
+    const bg = el('button', 'bgtoggle', '◐');
+    bg.title = 'Background: editor / terminal';
+    bg.onclick = () => vscode.postMessage({ type: 'bg' });
     const right = el('span', 'right');
-    right.append(seg);
+    right.append(bg, seg);
+    document.documentElement.classList.toggle('term', !!m.termBg);
     row.append(right);
     hd.replaceChildren(row, el('div', 'sub', [h.title, h.repo].filter(Boolean).join(' · ')));
     msg.placeholder = `Message ${h.agent} · Enter sends, Shift+Enter adds a line`;

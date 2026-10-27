@@ -25,6 +25,7 @@ export interface PanelHost {
 }
 
 const panels = new Map<string, SessionPanel>();
+const TERM_BG_KEY = 'panelTerminalBackground';
 
 /** One panel per session: opening it again brings the open one forward. */
 export function openPanel(host: PanelHost, p: Provider, s: SessionEntry, ctx: vscode.ExtensionContext): void {
@@ -66,7 +67,7 @@ class SessionPanel {
   private watcher?: fs.FSWatcher;
   private watchedDir?: string;
 
-  constructor(private readonly key: string, private readonly host: PanelHost, private readonly p: Provider, s: SessionEntry, ctx: vscode.ExtensionContext) {
+  constructor(private readonly key: string, private readonly host: PanelHost, private readonly p: Provider, s: SessionEntry, private readonly ctx: vscode.ExtensionContext) {
     this.session = s;
     const media = vscode.Uri.joinPath(ctx.extensionUri, 'media');
     this.panel = vscode.window.createWebviewPanel('workspaceAgentSessions.sessionPanel', s.title, vscode.ViewColumn.Beside,
@@ -112,7 +113,7 @@ class SessionPanel {
     const wv = this.panel.webview;
     const nonce = crypto.randomBytes(16).toString('hex');
     const uri = (f: string) => wv.asWebviewUri(vscode.Uri.joinPath(media, f));
-    return `<!DOCTYPE html><html><head><meta charset="utf-8">
+    return `<!DOCTYPE html><html${this.termBg() ? ' class="term"' : ''}><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: ${wv.cspSource}; style-src ${wv.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'">
 <link rel="stylesheet" href="${uri('panel.css')}"></head>
 <body><header id="hd"></header>
@@ -126,6 +127,9 @@ class SessionPanel {
 <div id="ov" hidden><div id="ovbox"></div></div>
 <script nonce="${nonce}" src="${uri('panel.js')}"></script></body></html>`;
   }
+
+  /** Background: the editor's (default) or the terminal's. One choice for all panels, kept in globalState. */
+  private termBg = () => this.ctx.globalState.get<boolean>(TERM_BG_KEY, false);
 
   private post(m: unknown) { if (!this.disposed) void this.panel.webview.postMessage(m); }
 
@@ -150,7 +154,7 @@ class SessionPanel {
     this.post({
       type: 'state', header: headerOf(this.p.name, s, this.host.snapshot(this.p.id)), busy: !!s.busy,
       waitingFor: s.waitingFor, canSend: st.canSend, readOnlyReason: st.canSend ? undefined : st.reason,
-      canResume: !t && !s.live && !!this.p.terminal, queue: this.queue,
+      canResume: !t && !s.live && !!this.p.terminal, queue: this.queue, termBg: this.termBg(),
     });
     // The cached entry may be older than flush's own fresh check: flush must not re-trigger itself from it.
     if (flushQueue && st.canSend && !st.hold && this.queue.length) void this.flush();
@@ -270,6 +274,9 @@ class SessionPanel {
         break;
       case 'send':
         if (typeof m.text === 'string' && m.text.trim()) void this.send(m.text);
+        break;
+      case 'bg':
+        void this.ctx.globalState.update(TERM_BG_KEY, !this.termBg()).then(updatePanels);
         break;
       case 'cancel':
         if (typeof m.index === 'number') { this.queue.splice(m.index, 1); this.postState(); }

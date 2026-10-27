@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.31.2
+
+- Panel: a **◐** button in the header switches the background between the editor's and the terminal's, so the panel can match the terminal beside it. The choice is shared by all panels and remembered.
+- Panel: orange now also marks what is happening or pending: *working…* in the header pulses, the message box is outlined orange while you type, a queued message has an orange edge, and your own messages carry a thin orange edge.
+
 ## 0.31.1
 
 - **Open Panel...** in the Command Palette (*Agent Sessions: Open Panel...*): pick any session, open ones first (running, or waiting for you), then the latest closed ones. The Panel button on a Projects row only shows on hover, so it was easy to miss.
