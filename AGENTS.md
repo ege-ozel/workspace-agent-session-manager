@@ -80,9 +80,11 @@ UI surfaces
   `{ref}` placeholders and `ChatItem` image `load()` reads one picture from disk when it scrolls into view (built-in
   providers keep no base64 in memory; `data` stays for third-party providers). Message text is escaped by the host
   (`markdown.ts`, `userHtml`); the webview uses `textContent` for everything else; CSP allows only a nonce'd script and
-  `data:` images. **Typing rules** (`send.ts`): only into a terminal in `launched`, and only while the host says that
-  terminal is still on the panel's session (`PanelHost.terminalSessionId`, after `/clear` it is another one →
-  read-only). While Claude's pid record says `status: "waiting"` (`SessionEntry.waitingFor`) Enter would answer the
+  `data:` images. **Typing rules** (`send.ts`): into a terminal in `launched`, or one this window runs the agent in
+  (`hostTerminal`, an agent typed into a shell; then only while a *fresh* listing says the session is live, else the
+  text would run as a shell command), and only while the host says that terminal is still on the panel's session
+  (`PanelHost.terminalSessionId`, after `/clear` it is another one). The message box is never disabled: a send that
+  cannot be typed anywhere (open in another process, terminal moved on) is refused with a message and the text comes back. While Claude's pid record says `status: "waiting"` (`SessionEntry.waitingFor`) Enter would answer the
   agent's question, so text is held in a queue and typed after the next *fresh* check (`PanelHost.fresh` re-lists the
   open sessions; the cached entry can be seconds old). Control characters are stripped from what is typed (an Esc
   could end a bracketed paste early). Codex has no such state. The header's ◐ button cycles the look (editor / terminal / dark):

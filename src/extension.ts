@@ -763,7 +763,13 @@ const sessionOf = (providerId: string, id: string) =>
 /** What the Panel view needs from this file. */
 const panelHost: PanelHost = {
   session: sessionOf,
-  terminal: (providerId, id) => [...launched].find(([, i]) => i.e.p.id === providerId && i.sessionId === id)?.[0],
+  // Ours, else any terminal of this window the agent runs in (typed into a shell): the Panel types into both.
+  terminal: (providerId, id) => {
+    const own = [...launched].find(([, i]) => i.e.p.id === providerId && i.sessionId === id)?.[0];
+    const s = own ? undefined : sessionOf(providerId, id);
+    return own ?? (s?.live ? hostTerminal(s.pid) : undefined);
+  },
+  ours: t => launched.has(t),
   showTerminal: (providerId, id) => {
     const s = sessionOf(providerId, id);
     const t = s && windowTerminalFor(s);
@@ -781,7 +787,7 @@ const panelHost: PanelHost = {
     try { return (await entries.get(providerId)?.p.listSessions?.(pctx, 'open'))?.find(s => s.id === id); } catch { return undefined; }
   },
   // The session our terminal is on now: resolveLaunched moves it on after /clear or /resume.
-  terminalSessionId: t => launched.get(t)?.sessionId,
+  terminalSessionId: t => launched.get(t)?.sessionId ?? openSessions().find(x => x.s.pid !== undefined && hostTerminal(x.s.pid) === t)?.s.id,
 };
 
 /**

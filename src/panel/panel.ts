@@ -24,6 +24,8 @@ export interface PanelHost {
   fresh(providerId: string, id: string): Promise<SessionEntry | undefined>;
   /** The session a terminal of ours is on now (it moves on after /clear), or undefined once it is not ours any more. */
   terminalSessionId(t: vscode.Terminal): string | undefined;
+  /** Started by this extension (the others are a shell the user typed the agent into). */
+  ours(t: vscode.Terminal): boolean;
 }
 
 const panels = new Map<string, SessionPanel>();
@@ -159,7 +161,7 @@ class SessionPanel {
     if (this.panel.title !== title) this.panel.title = title;
     this.post({
       type: 'state', header: headerOf(this.p.name, s, this.host.snapshot(this.p.id)), busy: !!s.busy,
-      waitingFor: s.waitingFor, canSend: st.canSend || resumable, resumes: resumable, readOnlyReason: st.canSend || resumable ? undefined : st.reason,
+      waitingFor: s.waitingFor, canSend: true, resumes: resumable,
       canResume: resumable, queue: this.queue, theme: this.theme(),
     });
     // The cached entry may be older than flush's own fresh check: flush must not re-trigger itself from it.
@@ -172,6 +174,8 @@ class SessionPanel {
     this.session = fresh ?? this.host.session(this.p.id, this.session.id) ?? this.session;
     const { t, st } = this.sendStateOf(this.session);
     if (!t || !st.canSend) return 'refused';
+    // A shell the agent runs in: if it has exited, the text would run as a shell command.
+    if (!this.host.ours(t) && !fresh?.live) return 'refused';
     // A terminal we just opened is still starting: its first keystrokes would be lost until the agent has the session.
     if (this.resumeAt && Date.now() - this.resumeAt < 60_000 && !fresh?.live) { if (queueIt) this.queue.push(text); return 'held'; }
     this.resumeAt = 0;
@@ -183,7 +187,11 @@ class SessionPanel {
   private async send(text: string) {
     if (!this.terminal() && !this.session.live && this.p.terminal) return this.resumeWith(text);
     const r = await this.trySend(text, true);
-    if (r === 'refused') this.post({ type: 'rejected', text });
+    if (r === 'refused') {
+      this.post({ type: 'rejected', text });
+      const why = this.sendStateOf(this.session).st.reason;
+      void vscode.window.showInformationMessage(why ? why.replace(/^Read-only: /, 'Not sent: ') : `Not sent: "${this.session.title}" is open in ${this.session.source ?? 'a process'} that this window cannot type into.`);
+    }
     this.postState();
   }
 

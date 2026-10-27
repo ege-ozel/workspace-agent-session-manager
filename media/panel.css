@@ -23,13 +23,13 @@ body.dark {
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+body { margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
   background: var(--bg); color: var(--fg); font: 13px/1.4 var(--vscode-font-family, system-ui, sans-serif); }
 button { font: inherit; color: inherit; }
 
 /* Header: fixed at the top. */
 #hd { flex: none; background: var(--side); border-bottom: 1px solid var(--line); }
-.hd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 9px 14px 6px; font-size: 12px; }
+.hd { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 10px; padding: 5px 12px; font-size: 12px; }
 .hd .ag { font-weight: 700; font-size: 13px; color: var(--efg); display: inline-flex; align-items: center; }
 .badge { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; margin-right: 6px;
   background: var(--soft); font: 700 11px system-ui, sans-serif; }

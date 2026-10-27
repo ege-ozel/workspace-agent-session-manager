@@ -25,19 +25,18 @@
   ov.addEventListener('click', e => { if (e.target === ov) closeOv(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeOv(); });
 
-  // Zoom in steps of the fitted size (click goes up, back to the start from the top; the wheel goes both ways). The cursor
-  // always says what the next click does, so a zoom-out cursor only shows where there is something to zoom out of.
-  const ZMAX = 5;
+  // Click: one zoom in, one zoom out. The wheel zooms freely. The cursor always says what the next click does.
+  const ZMAX = 5, ZCLICK = 2.5;
   function zoomable(img) {
     let scale = 1, fit = 0;
     const apply = () => {
       if (!fit) fit = img.getBoundingClientRect().width;
       img.style.maxWidth = img.style.maxHeight = scale > 1 ? 'none' : '';
       img.style.width = scale > 1 ? fit * scale + 'px' : '';
-      img.style.cursor = scale < ZMAX ? 'zoom-in' : 'zoom-out';
+      img.style.cursor = scale > 1 ? 'zoom-out' : 'zoom-in';
     };
     img.style.cursor = 'zoom-in';
-    img.onclick = () => { fit = fit || img.getBoundingClientRect().width; scale = scale >= ZMAX ? 1 : Math.min(ZMAX, Math.floor(scale) + 1); apply(); };
+    img.onclick = () => { fit = fit || img.getBoundingClientRect().width; scale = scale > 1 ? 1 : ZCLICK; apply(); };
     ovbox.onwheel = e => {
       e.preventDefault();
       fit = fit || img.getBoundingClientRect().width;
@@ -229,7 +228,7 @@
     term.onclick = () => vscode.postMessage({ type: 'terminal' });
     seg.append(term, el('button', 'on', 'Panel'));
     const bg = el('button', 'bgtoggle', '◐');
-    const NEXT = { editor: 'terminal', terminal: 'dark', dark: 'editor' }, NAME = { editor: 'VS Code editor', terminal: 'terminal background', dark: 'dark design' };
+    const NEXT = { editor: 'dark', dark: 'terminal', terminal: 'editor' }, NAME = { editor: 'VS Code editor', terminal: 'terminal background', dark: 'dark design' };
     const theme = NAME[m.theme] ? m.theme : 'editor';
     bg.title = `Look: ${NAME[theme]} (click: ${NAME[NEXT[theme]]})`;
     bg.onclick = () => vscode.postMessage({ type: 'bg' });
@@ -238,7 +237,8 @@
     document.body.classList.toggle('term', theme === 'terminal');
     document.body.classList.toggle('dark', theme === 'dark');
     row.append(right);
-    hd.replaceChildren(row, el('div', 'sub', [h.title, h.repo].filter(Boolean).join(' · ')));
+    ag.title = [h.title, h.repo].filter(Boolean).join(' · ');
+    hd.replaceChildren(row);
     msg.placeholder = m.resumes ? `Sending resumes this session in a terminal, then types your message` : `Message ${h.agent} · Enter sends, Shift+Enter adds a line`;
 
     // Waiting for the user: orange glow once when it begins, then steady; the bar stays while it lasts.

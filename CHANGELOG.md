@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.31.8
+
+- Panel: the message box is always there, and sends to any terminal of this window the session runs in, also an agent you typed into a shell (checked live first). A closed session is resumed by sending. When nothing can take the text (the session is open in another process) it says so and keeps your text.
+- Panel: the look button goes VS Code → dark → terminal, so the first click shows a change. The header is one thin row (title and repo in its tooltip). The 20 px side bands VS Code adds around a webview are gone. In the enlarged picture a click is one zoom in / one zoom out; the wheel still zooms freely.
+
 ## 0.31.7
 
 - Fixed: a code block inside a list item (``` indented under a bullet) showed as stray backticks with the code as plain text; it is a code block now.
