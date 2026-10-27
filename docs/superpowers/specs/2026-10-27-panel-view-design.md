@@ -89,7 +89,11 @@ agent-neutral union: user text, assistant text (Markdown string), tool call (nam
   blocks: Playwright screenshots arrive this way), and images in user messages.
 - **Codex** (`~/.codex/sessions/.../rollout-*.jsonl`): `response_item` lines; `payload.type: "message"` with
   `content` items `input_text` / `output_text` / `input_image` (`image_url: "data:image/png;base64,..."`),
-  plus `custom_tool_call` / `custom_tool_call_output` (and `function_call` / `function_call_output` if present).
+  plus `custom_tool_call` / `custom_tool_call_output` and `function_call` / `function_call_output`. Tool
+  outputs carry images inline too (seen: 30 `function_call_output` and 5 `custom_tool_call_output` lines with
+  `input_image` in the user's rollouts), so both message content and tool output arrays are scanned for them.
+  Codex writes no approval / question state to disk (no such event in rollouts, 2026-10-27), hence no
+  `waitingFor` for Codex.
   Skip `reasoning`, `event_msg`, `turn_context` and other bookkeeping lines.
 
 Verify both parsers with node against **copies** of real transcripts (AGENTS.md: never the real folders).
