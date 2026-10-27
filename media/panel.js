@@ -229,11 +229,14 @@
     term.onclick = () => vscode.postMessage({ type: 'terminal' });
     seg.append(term, el('button', 'on', 'Panel'));
     const bg = el('button', 'bgtoggle', '◐');
-    bg.title = 'Background: editor / terminal';
+    const NEXT = { editor: 'terminal', terminal: 'dark', dark: 'editor' }, NAME = { editor: 'VS Code editor', terminal: 'terminal background', dark: 'dark design' };
+    const theme = NAME[m.theme] ? m.theme : 'editor';
+    bg.title = `Look: ${NAME[theme]} (click: ${NAME[NEXT[theme]]})`;
     bg.onclick = () => vscode.postMessage({ type: 'bg' });
     const right = el('span', 'right');
     right.append(bg, seg);
-    document.documentElement.classList.toggle('term', !!m.termBg);
+    document.body.classList.toggle('term', theme === 'terminal');
+    document.body.classList.toggle('dark', theme === 'dark');
     row.append(right);
     hd.replaceChildren(row, el('div', 'sub', [h.title, h.repo].filter(Boolean).join(' · ')));
     msg.placeholder = m.resumes ? `Sending resumes this session in a terminal, then types your message` : `Message ${h.agent} · Enter sends, Shift+Enter adds a line`;

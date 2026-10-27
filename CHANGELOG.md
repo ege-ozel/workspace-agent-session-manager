@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.31.6
+
+- Panel look: the **◐** button now cycles three looks: VS Code editor colours (default), the terminal's background, and a fixed dark design that stays dark under any VS Code theme. One choice for all panels, remembered. (Reload the window after installing: an open panel keeps running the old script.)
+
 ## 0.31.5
 
 - Panel: a closed session can be continued from the Panel. Type and send: the session is resumed in a terminal, and the message is typed once the agent is up (shown as *queued* meanwhile). The Terminal button just shows the terminal again; typing works in both places (the 0.31.4 lock is gone).

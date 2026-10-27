@@ -27,7 +27,8 @@ export interface PanelHost {
 }
 
 const panels = new Map<string, SessionPanel>();
-const TERM_BG_KEY = 'panelTerminalBackground';
+const THEME_KEY = 'panelTheme';
+const THEMES = ['editor', 'terminal', 'dark'] as const;
 
 /** One panel per session: opening it again brings the open one forward. */
 export function openPanel(host: PanelHost, p: Provider, s: SessionEntry, ctx: vscode.ExtensionContext): void {
@@ -117,10 +118,10 @@ class SessionPanel {
     const wv = this.panel.webview;
     const nonce = crypto.randomBytes(16).toString('hex');
     const uri = (f: string) => wv.asWebviewUri(vscode.Uri.joinPath(media, f));
-    return `<!DOCTYPE html><html${this.termBg() ? ' class="term"' : ''}><head><meta charset="utf-8">
+    return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: ${wv.cspSource}; style-src ${wv.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'">
 <link rel="stylesheet" href="${uri('panel.css')}"></head>
-<body><header id="hd"></header>
+<body${this.theme() === 'editor' ? '' : ` class="${this.theme() === 'terminal' ? 'term' : 'dark'}"`}><header id="hd"></header>
 <main id="chat"><button id="earlier" hidden>Show earlier</button><div id="items"></div></main>
 <footer id="ft">
 <div id="wait" class="waitbar" hidden><span><b>Waiting in terminal:</b> <span id="why"></span></span><button id="answer">Answer in terminal</button></div>
@@ -132,8 +133,8 @@ class SessionPanel {
 <script nonce="${nonce}" src="${uri('panel.js')}"></script></body></html>`;
   }
 
-  /** Background: the editor's (default) or the terminal's. One choice for all panels, kept in globalState. */
-  private termBg = () => this.ctx.globalState.get<boolean>(TERM_BG_KEY, false);
+  /** The panel's look: the editor's colours (default), the terminal's background, or a fixed dark design. One choice for all panels. */
+  private theme = () => this.ctx.globalState.get<string>(THEME_KEY, 'editor');
 
   private post(m: unknown) { if (!this.disposed) void this.panel.webview.postMessage(m); }
 
@@ -159,7 +160,7 @@ class SessionPanel {
     this.post({
       type: 'state', header: headerOf(this.p.name, s, this.host.snapshot(this.p.id)), busy: !!s.busy,
       waitingFor: s.waitingFor, canSend: st.canSend || resumable, resumes: resumable, readOnlyReason: st.canSend || resumable ? undefined : st.reason,
-      canResume: resumable, queue: this.queue, termBg: this.termBg(),
+      canResume: resumable, queue: this.queue, theme: this.theme(),
     });
     // The cached entry may be older than flush's own fresh check: flush must not re-trigger itself from it.
     if (flushQueue && st.canSend && !st.hold && this.queue.length) void this.flush();
@@ -301,7 +302,7 @@ class SessionPanel {
         if (typeof m.data === 'string' && typeof m.mime === 'string') this.saveImage(m.mime, m.data, Number(m.id));
         break;
       case 'bg':
-        void this.ctx.globalState.update(TERM_BG_KEY, !this.termBg()).then(updatePanels);
+        void this.ctx.globalState.update(THEME_KEY, THEMES[(THEMES.indexOf(this.theme() as typeof THEMES[number]) + 1) % THEMES.length]).then(updatePanels);
         break;
       case 'cancel':
         if (typeof m.index === 'number') { this.queue.splice(m.index, 1); this.postState(); }

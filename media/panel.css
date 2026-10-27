@@ -1,16 +1,26 @@
 /* Panel view. Colours follow the theme; blue / teal / orange are the only accents (see the design spec's "Look"). */
-:root {
+body {
   --blue: #3794ff; --blue-t: #9cdcfe; --teal: #2ec4b6; --teal-t: #9fe3da; --orange: #f0883e; --orange-t: #ffb27a;
   --line: var(--vscode-panel-border, #3c3c3c);
   --fg: var(--vscode-foreground);
+  --efg: var(--vscode-editor-foreground, var(--fg));
   --dim: var(--vscode-descriptionForeground, #8b8b8b);
   --bg: var(--vscode-editor-background);
-  --raised: color-mix(in srgb, var(--vscode-foreground) 8%, var(--bg));
-  --soft: color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+  --raised: color-mix(in srgb, var(--fg) 8%, var(--bg));
+  --soft: color-mix(in srgb, var(--fg) 14%, transparent);
+  --side: var(--side);
+  --btn: var(--vscode-button-background); --btn-fg: var(--vscode-button-foreground);
+  --inp: var(--vscode-input-background, var(--raised)); --inp-fg: var(--vscode-input-foreground, var(--fg));
+  --inp-bd: var(--vscode-input-border, var(--line));
 }
-/* Header toggle: the terminal's background instead of the editor's (the panel sits next to a terminal). */
-:root.term { --bg: var(--vscode-terminal-background, var(--vscode-panel-background, var(--vscode-editor-background))); }
 body.vscode-light { --blue: #0451a5; --blue-t: #0451a5; --teal: #0f766e; --teal-t: #0f766e; --orange: #b45309; --orange-t: #b45309; }
+/* Header button cycles the look: VS Code editor colours (default), the terminal's background, or our own dark design. */
+body.term { --bg: var(--vscode-terminal-background, var(--vscode-panel-background, var(--vscode-editor-background))); }
+body.dark {
+  --blue: #3794ff; --blue-t: #9cdcfe; --teal: #2ec4b6; --teal-t: #9fe3da; --orange: #f0883e; --orange-t: #ffb27a;
+  --line: #3c3c3c; --fg: #cccccc; --efg: #d4d4d4; --dim: #9d9d9d; --bg: #1e1e1e; --side: #252526;
+  --btn: #0e639c; --btn-fg: #fff; --inp: #3c3c3c; --inp-fg: #cccccc; --inp-bd: transparent;
+}
 
 * { box-sizing: border-box; }
 body { margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
@@ -18,9 +28,9 @@ body { margin: 0; height: 100vh; display: flex; flex-direction: column; overflow
 button { font: inherit; color: inherit; }
 
 /* Header: fixed at the top. */
-#hd { flex: none; background: var(--vscode-sideBar-background, var(--raised)); border-bottom: 1px solid var(--line); }
+#hd { flex: none; background: var(--side); border-bottom: 1px solid var(--line); }
 .hd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 9px 14px 6px; font-size: 12px; }
-.hd .ag { font-weight: 700; font-size: 13px; color: var(--vscode-editor-foreground, var(--fg)); display: inline-flex; align-items: center; }
+.hd .ag { font-weight: 700; font-size: 13px; color: var(--efg); display: inline-flex; align-items: center; }
 .badge { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; margin-right: 6px;
   background: var(--soft); font: 700 11px system-ui, sans-serif; }
 .hd .m { color: var(--blue-t); }
@@ -40,7 +50,7 @@ button { font: inherit; color: inherit; }
 .seg { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 .seg button { background: none; border: 0; padding: 2px 10px; color: var(--dim); cursor: pointer; }
 .seg button:hover { color: var(--fg); }
-.seg button.on { background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: default; }
+.seg button.on { background: var(--btn); color: var(--btn-fg); cursor: default; }
 .sub { padding: 0 14px 7px; font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Conversation: the only part that scrolls. */
@@ -56,7 +66,7 @@ button { font: inherit; color: inherit; }
 .empty { color: var(--dim); font: 13px system-ui, sans-serif; }
 
 .u { width: fit-content; max-width: 85%; margin: 0 0 14px; padding: 8px 14px; border-radius: 4px 14px 14px 4px; border-left: 2px solid var(--orange); background: var(--raised);
-  font: 14px/1.5 system-ui, sans-serif; color: var(--vscode-editor-foreground, var(--fg)); white-space: pre-wrap; overflow-wrap: anywhere; }
+  font: 14px/1.5 system-ui, sans-serif; color: var(--efg); white-space: pre-wrap; overflow-wrap: anywhere; }
 .u blockquote.pasted { margin: 6px 0 0; padding: 2px 0 2px 10px; border-left: 2px solid var(--line); color: var(--dim); font-size: 13px; }
 .u > div + blockquote.pasted, .u > blockquote + div { margin-top: 6px; }
 
@@ -118,14 +128,14 @@ img.thumb { display: block; max-width: min(320px, 100%); max-height: 320px; bord
 .hint { margin-top: 10px; text-align: center; color: var(--dim); font: 12px system-ui, sans-serif; }
 
 /* Message box and waiting bar: fixed at the bottom, under the scrolling conversation. */
-#ft { flex: none; background: var(--vscode-sideBar-background, var(--raised)); border-top: 1px solid var(--line); padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+#ft { flex: none; background: var(--side); border-top: 1px solid var(--line); padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
 #ft[hidden], #ft > [hidden] { display: none; }
 #compose { display: flex; gap: 8px; align-items: flex-end; }
 #msg { flex: 1; resize: none; max-height: 160px; padding: 7px 10px; border-radius: 6px; font: 14px/1.4 system-ui, sans-serif;
-  color: var(--vscode-input-foreground, var(--fg)); background: var(--vscode-input-background, var(--raised));
-  border: 1px solid var(--vscode-input-border, var(--line)); }
+  color: var(--inp-fg); background: var(--inp);
+  border: 1px solid var(--inp-bd); }
 #msg:focus { outline: 1px solid var(--orange); outline-offset: -1px; }
-#send, #resume { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; border-radius: 6px; padding: 6px 14px; cursor: pointer; }
+#send, #resume { background: var(--btn); color: var(--btn-fg); border: 0; border-radius: 6px; padding: 6px 14px; cursor: pointer; }
 .shots { display: flex; flex-wrap: wrap; gap: 8px; }
 .shots[hidden] { display: none; }
 .shot { position: relative; }
