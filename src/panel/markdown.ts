@@ -64,7 +64,15 @@ interface Item { indent: number; ordered: boolean; num: number; text: string }
 
 function list(lines: string[], i: number, out: string[]): number {
   const items: Item[] = [];
+  let fence = '';
   for (; i < lines.length; i++) {
+    const last = items[items.length - 1];
+    if (fence && last) {
+      // inside a fenced block that belongs to the item: kept as is, blank lines included
+      last.text += '\n' + lines[i].slice(Math.min(last.indent + 2, lines[i].length - lines[i].trimStart().length));
+      if (lines[i].trim().startsWith(fence) && !lines[i].trim().replace(/^[`~]+/, '')) fence = '';
+      continue;
+    }
     const m = ITEM.exec(lines[i]);
     if (m) { items.push({ indent: m[1].replace(/\t/g, '    ').length, ordered: /\d/.test(m[2]), num: parseInt(m[2], 10), text: m[3] }); continue; }
     if (!lines[i].trim()) {
@@ -74,12 +82,33 @@ function list(lines: string[], i: number, out: string[]): number {
       if (j < lines.length && ITEM.test(lines[j])) { i = j - 1; continue; }
       break;
     }
-    if (/^\s/.test(lines[i]) && items.length) items[items.length - 1].text += '\n' + lines[i].trim();
+    const f = /^\s/.test(lines[i]) ? FENCE.exec(lines[i]) : null;
+    if (f && items.length) { fence = f[1]; items[items.length - 1].text += '\n' + lines[i].trim(); }
+    else if (/^\s/.test(lines[i]) && items.length) items[items.length - 1].text += '\n' + lines[i].trim();
     else break;
   }
   const pos = { i: 0 };
   while (pos.i < items.length) out.push(buildList(items, pos));
   return i;
+}
+
+/** Text lines of an item joined with <br>; a fenced block inside it becomes a <pre>. */
+function itemHtml(text: string): string {
+  const lines = text.split('\n');
+  const parts: string[] = [];
+  let run: string[] = [];
+  const flush = () => { if (run.length) parts.push(run.map(inline).join('<br>')); run = []; };
+  for (let k = 0; k < lines.length; k++) {
+    const f = FENCE.exec(lines[k]);
+    if (!f || k === 0) { run.push(lines[k]); continue; }
+    flush();
+    let e = k + 1;
+    while (e < lines.length && !(lines[e].trim().startsWith(f[1]) && !lines[e].trim().replace(/^[`~]+/, ''))) e++;
+    parts.push(blocks(lines.slice(k, e + 1)));
+    k = e;
+  }
+  flush();
+  return parts.join('');
 }
 
 function buildList(items: Item[], pos: { i: number }): string {
@@ -88,7 +117,7 @@ function buildList(items: Item[], pos: { i: number }): string {
   let h = `<${tag}${base.ordered && base.num !== 1 ? ` start="${base.num}"` : ''}>`;
   while (pos.i < items.length && items[pos.i].indent >= base.indent && !(items[pos.i].indent === base.indent && items[pos.i].ordered !== base.ordered)) {
     const it = items[pos.i++];
-    h += `<li>${it.text.split('\n').map(inline).join('<br>')}`;
+    h += `<li>${itemHtml(it.text)}`;
     if (pos.i < items.length && items[pos.i].indent > base.indent) h += buildList(items, pos);
     h += '</li>';
   }

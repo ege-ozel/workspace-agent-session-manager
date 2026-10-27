@@ -59,3 +59,12 @@ test('crlf and turkish', () => {
   assert.strictEqual(count(h, /<table/g), 1);
   for (const c of ['Şu tablo', 'Ğ', 'ü', 'ı', 'ç']) assert.ok(h.includes(c), c);
 });
+
+test('a fenced block inside a list item is a code block, not stray backticks', () => {
+  const h = renderMarkdown('- **Fast:** run it\n  ```\n  ! code --install x\n\n  second\n  ```\n- **Next:** F5\n\nAfter.');
+  assert.strictEqual(count(h, /<pre>/g), 1);
+  assert.strictEqual(count(h, /<li>/g), 2);
+  assert.ok(h.includes('<code>! code --install x\n\nsecond</code>'), h);
+  assert.ok(!h.includes('`'), h);
+  assert.ok(h.includes('<p>After.</p>'));
+});

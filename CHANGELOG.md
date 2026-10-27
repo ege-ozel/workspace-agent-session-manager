@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.31.7
+
+- Fixed: a code block inside a list item (``` indented under a bullet) showed as stray backticks with the code as plain text; it is a code block now.
+
 ## 0.31.6
 
 - Panel look: the **◐** button now cycles three looks: VS Code editor colours (default), the terminal's background, and a fixed dark design that stays dark under any VS Code theme. One choice for all panels, remembered. (Reload the window after installing: an open panel keeps running the old script.)
