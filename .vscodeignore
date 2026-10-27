@@ -17,3 +17,5 @@ images/screenshots/**
 demo/**
 docs/**
 .superpowers/**
+.agents/**
+skills-lock.json
