@@ -16,7 +16,8 @@ export interface PanelHost {
   terminal(providerId: string, id: string): vscode.Terminal | undefined;
   /** Shows the session's terminal in this window, ours or the user's own shell; false when there is none. */
   showTerminal(providerId: string, id: string): boolean;
-  resume(providerId: string, id: string): void;
+  /** Opens the session in a new terminal; false when that is not possible (nothing to resume, no terminal capability). */
+  resume(providerId: string, id: string): boolean;
   /** The provider's last Snapshot, for the header's 5h / wk bars. */
   snapshot(providerId: string): Snapshot | undefined;
   /** The session re-read right now (not the cached entry); undefined when it is not among the open ones. */
@@ -63,6 +64,8 @@ class SessionPanel {
   /** Messages sent while the terminal shows a question, typed once it is answered. */
   private queue: string[] = [];
   private flushing = false;
+  /** When this panel resumed its session to send a message; the first keystrokes wait for the agent to be live. */
+  private resumeAt = 0;
   private debounce?: NodeJS.Timeout;
   private readonly poll: NodeJS.Timeout;
   private watcher?: fs.FSWatcher;
@@ -150,12 +153,13 @@ class SessionPanel {
     this.session = this.host.session(this.p.id, this.session.id) ?? this.session;
     const s = this.session;
     const { t, st } = this.sendStateOf(s);
+    const resumable = !t && !s.live && !!this.p.terminal;
     const title = (s.waitingFor ? '● ' : '') + s.title;
     if (this.panel.title !== title) this.panel.title = title;
     this.post({
       type: 'state', header: headerOf(this.p.name, s, this.host.snapshot(this.p.id)), busy: !!s.busy,
-      waitingFor: s.waitingFor, canSend: st.canSend, readOnlyReason: st.canSend ? undefined : st.reason,
-      canResume: !t && !s.live && !!this.p.terminal, queue: this.queue, termBg: this.termBg(),
+      waitingFor: s.waitingFor, canSend: st.canSend || resumable, resumes: resumable, readOnlyReason: st.canSend || resumable ? undefined : st.reason,
+      canResume: resumable, queue: this.queue, termBg: this.termBg(),
     });
     // The cached entry may be older than flush's own fresh check: flush must not re-trigger itself from it.
     if (flushQueue && st.canSend && !st.hold && this.queue.length) void this.flush();
@@ -163,18 +167,35 @@ class SessionPanel {
 
   /** Types one message, after a fresh look at whether that is still right: the answer may have changed meanwhile. */
   private async trySend(text: string, queueIt: boolean): Promise<'sent' | 'held' | 'refused'> {
-    this.session = (await this.host.fresh(this.p.id, this.session.id)) ?? this.host.session(this.p.id, this.session.id) ?? this.session;
+    const fresh = await this.host.fresh(this.p.id, this.session.id);
+    this.session = fresh ?? this.host.session(this.p.id, this.session.id) ?? this.session;
     const { t, st } = this.sendStateOf(this.session);
     if (!t || !st.canSend) return 'refused';
+    // A terminal we just opened is still starting: its first keystrokes would be lost until the agent has the session.
+    if (this.resumeAt && Date.now() - this.resumeAt < 60_000 && !fresh?.live) { if (queueIt) this.queue.push(text); return 'held'; }
+    this.resumeAt = 0;
     if (st.hold) { if (queueIt) this.queue.push(text); return 'held'; }
     t.sendText(terminalText(text), true);
     return 'sent';
   }
 
   private async send(text: string) {
+    if (!this.terminal() && !this.session.live && this.p.terminal) return this.resumeWith(text);
     const r = await this.trySend(text, true);
     if (r === 'refused') this.post({ type: 'rejected', text });
     this.postState();
+  }
+
+  /** The session is closed: open it in a terminal, keep the message, and type it once the agent is up. */
+  private resumeWith(text: string) {
+    if (!this.host.resume(this.p.id, this.session.id)) { this.post({ type: 'rejected', text }); return; }
+    this.resumeAt = Date.now();
+    this.queue.push(text);
+    this.postState(false);
+    const timer = setInterval(() => {
+      if (this.disposed || !this.queue.length || !this.resumeAt || Date.now() - this.resumeAt > 90_000) { clearInterval(timer); return; }
+      void this.flush();
+    }, 1500);
   }
 
   /** In order, each after its own check; the pause lets a question the previous message raised show up first. */
@@ -270,11 +291,6 @@ class SessionPanel {
       case 'terminal':
         if (!this.host.showTerminal(this.p.id, this.session.id)) this.noTerminal();
         break;
-      case 'back':
-        // The Terminal button showed the terminal beside this panel; coming back puts it away again.
-        void vscode.commands.executeCommand('workbench.action.closePanel');
-        this.panel.reveal(undefined, false);
-        break;
       case 'resume':
         this.host.resume(this.p.id, this.session.id);
         break;
@@ -282,7 +298,7 @@ class SessionPanel {
         if (typeof m.text === 'string' && m.text.trim()) void this.send(m.text);
         break;
       case 'pasteImage':
-        if (typeof m.data === 'string' && typeof m.mime === 'string') this.saveImage(m.mime, m.data);
+        if (typeof m.data === 'string' && typeof m.mime === 'string') this.saveImage(m.mime, m.data, Number(m.id));
         break;
       case 'bg':
         void this.ctx.globalState.update(TERM_BG_KEY, !this.termBg()).then(updatePanels);
@@ -294,7 +310,7 @@ class SessionPanel {
   }
 
   /** A picture pasted into the message box becomes a temp file; the agent reads an image path typed into its prompt. */
-  private saveImage(mime: string, b64: string) {
+  private saveImage(mime: string, b64: string, id: number) {
     const ext = ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' } as Record<string, string>)[mime];
     if (!ext || b64.length > 14_000_000) return;
     const dir = path.join(os.tmpdir(), 'agent-sessions-paste');
@@ -304,9 +320,9 @@ class SessionPanel {
         const p = path.join(dir, f);
         if (Date.now() - fs.statSync(p).mtimeMs > 86_400_000) fs.rmSync(p, { force: true });
       }
-      const file = path.join(dir, `paste-${Date.now()}.${ext}`);
+      const file = path.join(dir, `paste-${Date.now()}-${id}.${ext}`);
       fs.writeFileSync(file, Buffer.from(b64, 'base64'));
-      this.post({ type: 'attached', path: file });
+      this.post({ type: 'attached', id, path: file });
     } catch { /* temp folder not writable: nothing is inserted */ }
   }
 

@@ -87,7 +87,10 @@ UI surfaces
   open sessions; the cached entry can be seconds old). Control characters are stripped from what is typed (an Esc
   could end a bracketed paste early). Codex has no such state. The header's ◐ button flips the background between the
   editor's and the terminal's: `bg` message → globalState `panelTerminalBackground` → every state message carries
-  `termBg` → `:root.term` in `panel.css` (all panel colours derive from `--bg`).
+  `termBg` → `:root.term` in `panel.css` (all panel colours derive from `--bg`). Sending from a panel whose session is closed
+  (`SessionPanel.resumeWith`) resumes it through `PanelHost.resume`, queues the text and types it once a fresh listing
+  says the session is live (the terminal's first keystrokes are lost before that; 60 s cap). Pasted pictures: webview
+  card + `pasteImage` → temp file in `os.tmpdir()/agent-sessions-paste`; the path is appended to the sent text.
 - **Ways into the Panel**: the Projects row button / menu (`openSessionPanel`), the terminal toolbar (`openActivePanel`),
   the palette's `openPanelPick` (open sessions, then ≤ 50 latest closed; `pickItems`), and "<agent> in terminal + Panel"
   in the new-session chain (`newSessionFlow` → `launch` → `panelWhenKnown`). That last one asks nothing new: it polls

@@ -113,7 +113,8 @@ img.thumb { display: block; max-width: min(320px, 100%); max-height: 320px; bord
   background: var(--bg); box-shadow: 0 20px 60px rgba(0, 0, 0, .6); }
 #ovbox .tbl table { font-size: 15px; }
 #ovbox .tbl th, #ovbox .tbl td { padding: 9px 16px; }
-#ovbox img { display: block; max-width: 86vw; max-height: 78vh; border-radius: 8px; cursor: zoom-out; }
+#ovbox img { display: block; max-width: 86vw; max-height: 78vh; border-radius: 8px; }
+.ovx { position: absolute; top: 14px; right: 18px; background: rgba(0, 0, 0, .5); color: #fff; border: 0; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; font-size: 14px; }
 .hint { margin-top: 10px; text-align: center; color: var(--dim); font: 12px system-ui, sans-serif; }
 
 /* Message box and waiting bar: fixed at the bottom, under the scrolling conversation. */
@@ -125,6 +126,11 @@ img.thumb { display: block; max-width: min(320px, 100%); max-height: 320px; bord
   border: 1px solid var(--vscode-input-border, var(--line)); }
 #msg:focus { outline: 1px solid var(--orange); outline-offset: -1px; }
 #send, #resume { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 0; border-radius: 6px; padding: 6px 14px; cursor: pointer; }
+.shots { display: flex; flex-wrap: wrap; gap: 8px; }
+.shots[hidden] { display: none; }
+.shot { position: relative; }
+.shot img { display: block; height: 64px; max-width: 120px; object-fit: cover; border-radius: 8px; cursor: zoom-in; box-shadow: 0 0 0 1px var(--line); }
+.shot .x { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: var(--vscode-button-secondaryBackground, var(--raised)); color: var(--fg); cursor: pointer; font-size: 12px; line-height: 18px; }
 .ro { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; color: var(--dim); font-size: 12px; }
 .q { display: flex; align-items: center; gap: 8px; padding-left: 8px; border-left: 2px solid var(--orange); color: var(--orange-t); font: italic 12px system-ui, sans-serif; }
 .q span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -773,7 +773,7 @@ const panelHost: PanelHost = {
   resume: (providerId, id) => {
     const s = sessionOf(providerId, id);
     const e = entries.get(providerId);
-    if (s && e?.p.terminal) launch(e, s.cwd, s);
+    return !!(s && e?.p.terminal && launch(e, s.cwd, s));
   },
   snapshot: providerId => entries.get(providerId)?.last,
   // Read right now, for the checks before typing: the cached entry can be seconds old.

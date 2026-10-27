@@ -13,13 +13,39 @@
   const atBottom = () => chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
 
   // ---- enlarged view -------------------------------------------------------
-  const closeOv = () => { ov.hidden = true; ovbox.replaceChildren(); };
+  const closeOv = () => { ov.hidden = true; ovbox.onwheel = null; ovbox.replaceChildren(); };
   function openOv(node, hint) {
     ovbox.replaceChildren(node, el('div', 'hint', hint));
     ov.hidden = false;
   }
+  const ovx = el('button', 'ovx', '✕');
+  ovx.title = 'Close (Esc)';
+  ovx.onclick = closeOv;
+  ov.append(ovx);
   ov.addEventListener('click', e => { if (e.target === ov) closeOv(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeOv(); });
+
+  // Zoom in steps of the fitted size (click goes up, back to the start from the top; the wheel goes both ways). The cursor
+  // always says what the next click does, so a zoom-out cursor only shows where there is something to zoom out of.
+  const ZMAX = 5;
+  function zoomable(img) {
+    let scale = 1, fit = 0;
+    const apply = () => {
+      if (!fit) fit = img.getBoundingClientRect().width;
+      img.style.maxWidth = img.style.maxHeight = scale > 1 ? 'none' : '';
+      img.style.width = scale > 1 ? fit * scale + 'px' : '';
+      img.style.cursor = scale < ZMAX ? 'zoom-in' : 'zoom-out';
+    };
+    img.style.cursor = 'zoom-in';
+    img.onclick = () => { fit = fit || img.getBoundingClientRect().width; scale = scale >= ZMAX ? 1 : Math.min(ZMAX, Math.floor(scale) + 1); apply(); };
+    ovbox.onwheel = e => {
+      e.preventDefault();
+      fit = fit || img.getBoundingClientRect().width;
+      scale = Math.max(1, Math.min(ZMAX, scale * (e.deltaY < 0 ? 1.25 : 0.8)));
+      if (scale < 1.05) scale = 1;
+      apply();
+    };
+  }
 
   // ---- tables --------------------------------------------------------------
   function tsv(table) {
@@ -79,8 +105,8 @@
     img.onclick = () => {
       const big = el('img');
       big.src = src;
-      big.onclick = closeOv;
-      openOv(big, 'Click the image or outside it to close');
+      openOv(big, 'Click or scroll to zoom · Esc or click outside to close');
+      zoomable(big);
     };
     ph.replaceWith(img);
     holders.delete(ref);
@@ -186,12 +212,7 @@
     return s;
   }
 
-  // Terminal / Panel: the terminal opens beside the panel, so say which one is meant to take the typing.
-  let inTerm = false, lastState;
-  function setMode(on) { inTerm = on; if (lastState) onState(lastState); }
-
   function onState(m) {
-    lastState = m;
     const h = m.header;
     const row = el('div', 'hd');
     const ag = el('span', 'ag');
@@ -203,12 +224,10 @@
     if (meters.length) row.append(el('span', 'sep', '|'), ...meters);
     if (m.busy) row.append(el('span', 'busy', '● working…'));
     const seg = el('span', 'seg');
-    const term = el('button', inTerm ? 'on' : null, 'Terminal');
+    const term = el('button', null, 'Terminal');
     term.title = 'Show this session’s terminal';
-    term.onclick = () => { setMode(true); vscode.postMessage({ type: 'terminal' }); };
-    const pan = el('button', inTerm ? null : 'on', 'Panel');
-    pan.onclick = () => { if (inTerm) { setMode(false); vscode.postMessage({ type: 'back' }); msg.focus(); } };
-    seg.append(term, pan);
+    term.onclick = () => vscode.postMessage({ type: 'terminal' });
+    seg.append(term, el('button', 'on', 'Panel'));
     const bg = el('button', 'bgtoggle', '◐');
     bg.title = 'Background: editor / terminal';
     bg.onclick = () => vscode.postMessage({ type: 'bg' });
@@ -217,7 +236,7 @@
     document.documentElement.classList.toggle('term', !!m.termBg);
     row.append(right);
     hd.replaceChildren(row, el('div', 'sub', [h.title, h.repo].filter(Boolean).join(' · ')));
-    msg.placeholder = inTerm ? 'The terminal is in front: type there, or click here to come back' : `Message ${h.agent} · Enter sends, Shift+Enter adds a line`;
+    msg.placeholder = m.resumes ? `Sending resumes this session in a terminal, then types your message` : `Message ${h.agent} · Enter sends, Shift+Enter adds a line`;
 
     // Waiting for the user: orange glow once when it begins, then steady; the bar stays while it lasts.
     const waiting = !!m.waitingFor;
@@ -250,22 +269,43 @@
   // ---- message box -----------------------------------------------------------
   const grow = () => { msg.style.height = 'auto'; msg.style.height = Math.min(msg.scrollHeight, 160) + 'px'; };
   function submit() {
-    const text = msg.value;
-    if (!text.trim()) return;
+    const paths = [...cards.values()].map(c => c.path).filter(Boolean);
+    if (!msg.value.trim() && !paths.length) return;
+    const text = [msg.value.trim(), ...paths].join(' ');
+    cards.clear(); shots.replaceChildren(); shots.hidden = true;
     vscode.postMessage({ type: 'send', text });
     msg.value = '';
     grow();
   }
   msg.addEventListener('input', grow);
-  msg.addEventListener('focus', () => { if (inTerm) { setMode(false); vscode.postMessage({ type: 'back' }); } });
-  // A pasted picture cannot go into a text box: the host saves it as a file and its path is typed instead.
+  // Pasted pictures cannot go into a text box: the host saves each as a file, a card shows it above the box, and the
+  // paths are appended to the message when it is sent.
+  const shots = el('div', 'shots');
+  shots.hidden = true;
+  compose.before(shots);
+  const cards = new Map();
+  let shotId = 0;
   msg.addEventListener('paste', e => {
-    const f = [...(e.clipboardData?.files || [])].find(x => /^image\/(png|jpe?g|gif|webp)$/.test(x.type));
-    if (!f) return;
+    const fs = [...(e.clipboardData?.files || [])].filter(x => /^image\/(png|jpe?g|gif|webp)$/.test(x.type));
+    if (!fs.length) return;
     e.preventDefault();
-    const r = new FileReader();
-    r.onload = () => vscode.postMessage({ type: 'pasteImage', mime: f.type, data: String(r.result).split(',')[1] || '' });
-    r.readAsDataURL(f);
+    for (const f of fs) {
+      const id = ++shotId, r = new FileReader();
+      r.onload = () => {
+        const url = String(r.result);
+        const card = el('div', 'shot'), img = el('img'), x = el('button', 'x', '×');
+        img.src = url;
+        img.onclick = () => { const big = el('img'); big.src = url; openOv(big, 'Click or scroll to zoom · Esc or click outside to close'); zoomable(big); };
+        x.title = 'Remove';
+        x.onclick = () => { cards.delete(id); card.remove(); shots.hidden = !cards.size; };
+        card.append(img, x);
+        cards.set(id, { card, path: '' });
+        shots.append(card);
+        shots.hidden = false;
+        vscode.postMessage({ type: 'pasteImage', id, mime: f.type, data: url.split(',')[1] || '' });
+      };
+      r.readAsDataURL(f);
+    }
   });
   // Enter and Ctrl+Enter send, Shift+Enter adds a line. Not while an IME is composing.
   msg.addEventListener('keydown', e => {
@@ -287,12 +327,7 @@
   window.addEventListener('message', ({ data: m }) => {
     if (m.type === 'items') onItems(m);
     else if (m.type === 'image') showImage(m.ref, m.src);
-    else if (m.type === 'attached') {
-      const at = msg.selectionStart ?? msg.value.length;
-      const pre = msg.value.slice(0, at), sep = pre && !/\s$/.test(pre) ? ' ' : '';
-      msg.setRangeText(sep + m.path + ' ', at, msg.selectionEnd ?? at, 'end');
-      grow(); msg.focus();
-    }
+    else if (m.type === 'attached') { const c = cards.get(m.id); if (c) c.path = m.path; }
     else if (m.type === 'state') onState(m);
     // The host would not type it (the terminal moved or closed meanwhile): give the text back.
     else if (m.type === 'rejected' && !msg.value.trim()) { msg.value = m.text; grow(); }

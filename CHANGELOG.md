@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.31.5
+
+- Panel: a closed session can be continued from the Panel. Type and send: the session is resumed in a terminal, and the message is typed once the agent is up (shown as *queued* meanwhile). The Terminal button just shows the terminal again; typing works in both places (the 0.31.4 lock is gone).
+- Panel: pasted pictures show as small cards above the message box (several are fine, click to enlarge, × to remove); their file paths are added when you send.
+- Enlarged picture: click zooms in step by step and only then offers zoom-out, the mouse wheel zooms both ways, ✕ or Esc or a click outside closes.
+
 ## 0.31.4
 
 - Panel: **Terminal / Panel** is a real switch now. *Terminal* shows the terminal and marks itself active, and the message box says to type there; clicking the message box or *Panel* puts the terminal away again. Before, both looked active and text typed into the wrong one.
