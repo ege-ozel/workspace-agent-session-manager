@@ -159,6 +159,12 @@
         "icon": "$(fold-up)"
       },
       {
+        "command": "workspaceAgentSessions.openSessionPanel",
+        "title": "Open Panel",
+        "category": "Agent Sessions",
+        "icon": "$(preview)"
+      },
+      {
         "command": "workspaceAgentSessions.resumeSession",
         "title": "Resume in Terminal",
         "category": "Agent Sessions",
@@ -436,6 +442,16 @@
       ],
       "view/item/context": [
         {
+          "command": "workspaceAgentSessions.openSessionPanel",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.panel\\./",
+          "group": "inline@0"
+        },
+        {
+          "command": "workspaceAgentSessions.openSessionPanel",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.panel\\./",
+          "group": "session@0"
+        },
+        {
           "command": "workspaceAgentSessions.restartSession",
           "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.close\\./",
           "group": "session@4.5"
@@ -567,6 +583,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "workspaceAgentSessions.openSessionPanel",
+          "when": "false"
+        },
         {
           "command": "workspaceAgentSessions.claudeLiveLimitsIsOn",
           "when": "false"

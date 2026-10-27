@@ -7,6 +7,7 @@ import { disableLiveLimits, enableLiveLimits, liveLimitsScript, liveLimitsState,
 import { codex } from './providers/codex';
 import { norm, processParents } from './util';
 import { SavedTerminal, resumedCodex, terminalKey } from './terminals';
+import { PanelHost, disposePanels, openPanel as openSessionPanel, updatePanels } from './panel/panel';
 
 /** Built-in agents. To add one: create src/providers/<agent>.ts exporting a Provider and list it here. */
 const BUILT_IN: Provider[] = [claude, codex];
@@ -292,6 +293,7 @@ function register(p: Provider): vscode.Disposable {
 }
 
 export function activate(ctx: vscode.ExtensionContext): Api {
+  extCtx = ctx;
   try { refreshLiveLimitsScript(CLAUDE_DIR); } catch { /* the script from the last version keeps working */ }
   memento = ctx.globalState;
   syncRevealContext();
@@ -323,6 +325,8 @@ export function activate(ctx: vscode.ExtensionContext): Api {
     }),
     treeChanged,
     treeChanged.event(() => usageView.render()),
+    treeChanged.event(updatePanels),
+    { dispose: disposePanels },
     vscode.window.registerWebviewViewProvider('workspaceAgentSessions.view', usageView),
     vscode.window.registerWebviewViewProvider('workspaceAgentSessions.viewExplorer', usageView),
     vscode.commands.registerCommand('workspaceAgentSessions.refresh', refreshAll),
@@ -334,6 +338,9 @@ export function activate(ctx: vscode.ExtensionContext): Api {
       (id?: string, scope?: SessionScope) => showSessions(id, undefined, scope)),
     vscode.commands.registerCommand('workspaceAgentSessions.menu', menu),
     vscode.commands.registerCommand('workspaceAgentSessions.openPanel', openPanel),
+    vscode.commands.registerCommand('workspaceAgentSessions.openSessionPanel', (n: PNode) => {
+      if (n?.kind === 'session' && n.e.p.readTranscript) openSessionPanel(panelHost, n.e.p, n.s, extCtx);
+    }),
     vscode.commands.registerCommand('workspaceAgentSessions.deleteSessions', async (arg?: string | Node) => {
       const e = await pickProvider(typeof arg === 'string' ? arg : arg?.e.p.id, true);
       if (e) await deleteMany(e);
@@ -685,6 +692,29 @@ function hostTerminal(pid: number | undefined): vscode.Terminal | undefined {
 /** Ours, or another terminal of this window: those can be shown, but never closed or typed into. */
 const windowTerminalFor = (s: SessionEntry) => terminalFor(s) ?? hostTerminal(s.pid);
 
+let extCtx: vscode.ExtensionContext;
+const sessionOf = (providerId: string, id: string) =>
+  shownSessions.find(x => x.e.p.id === providerId && x.s.id === id)?.s
+  ?? openSessions().find(x => x.e.p.id === providerId && x.s.id === id)?.s;
+
+/** What the Panel view needs from this file. */
+const panelHost: PanelHost = {
+  session: sessionOf,
+  terminal: (providerId, id) => [...launched].find(([, i]) => i.e.p.id === providerId && i.sessionId === id)?.[0],
+  showTerminal: (providerId, id) => {
+    const s = sessionOf(providerId, id);
+    const t = s && windowTerminalFor(s);
+    t?.show();
+    return !!t;
+  },
+  resume: (providerId, id) => {
+    const s = sessionOf(providerId, id);
+    const e = entries.get(providerId);
+    if (s && e?.p.terminal) launch(e, s.cwd, s);
+  },
+  snapshot: providerId => entries.get(providerId)?.last,
+};
+
 /**
  * A terminal whose own process is the agent was started by us (users run agents in a shell), so after a reload
  * it is taken back with its buttons. Agents still not placed may run in a shell: their parents are looked up.
@@ -1028,6 +1058,7 @@ const projects: vscode.TreeDataProvider<PNode> = {
     it.iconPath = new vscode.ThemeIcon(s.busy ? 'loading~spin' : open ? 'debug-start' : archived ? 'archive' : 'comment-discussion');
     // Flags matched by the inline menus in package.json, e.g. viewItem =~ /\.resume\./
     const f = ['psession'];
+    if (p.readTranscript) f.push('panel');
     if (!open) {
       if (p.terminal && !archived) f.push('resume');
       if (archived ? p.unarchiveSession : p.archiveSession) f.push(archived ? 'unarchive' : 'archive');

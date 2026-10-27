@@ -395,6 +395,7 @@ const plain = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, '').replace(/&lt;/g,
 function userTextItems(text: string): ChatItem[] {
   const t = text.replace(INJECTED, '').trim();
   if (!t) return [];
+  if (/^\[Request interrupted by user( for tool use)?\]$/.test(t)) return [{ kind: 'note', title: 'Interrupted by user', text: '' }];
   if (t.startsWith('<command-name>')) return [{ kind: 'tool', name: tagText(t, 'command-name') ?? '', summary: plain(tagText(t, 'command-args') ?? '').slice(0, 120) }];
   if (t.startsWith('<bash-input>')) return [{ kind: 'tool', name: '!', summary: plain(tagText(t, 'bash-input') ?? '').replace(/\s+/g, ' ').slice(0, 120) }];
   if (/^<(local-command-std(out|err)|bash-std(out|err))>/.test(t)) {

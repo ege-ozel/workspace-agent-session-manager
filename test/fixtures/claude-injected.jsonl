@@ -10,3 +10,5 @@
 {"type":"user","message":{"role":"user","content":"<local-command-caveat>Caveat: not for you.</local-command-caveat>"}}
 {"type":"user","message":{"role":"user","content":"<pasted_content id=\"1\">\nhello\n</pasted_content>"}}
 {"type":"user","message":{"role":"user","content":"hello"}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}

@@ -88,7 +88,7 @@ test('waiting is its own state, not busy', () => {
 const injected = () => claudeItems(fs.readFileSync(path.join(__dirname, 'fixtures', 'claude-injected.jsonl'), 'utf8').split(/\r?\n/).filter(Boolean));
 
 test('lines the user did not write: kinds', () => {
-  assert.deepStrictEqual(injected().map(i => i.kind), ['tool', 'toolResult', 'note', 'user', 'user', 'tool', 'toolResult', 'note', 'user', 'user']);
+  assert.deepStrictEqual(injected().map(i => i.kind), ['tool', 'toolResult', 'note', 'user', 'user', 'tool', 'toolResult', 'note', 'user', 'user', 'note', 'note']);
 });
 
 test('slash command becomes a chip, its output a result without ansi', () => {
@@ -113,4 +113,13 @@ test('bash mode and background tasks', () => {
   assert.deepStrictEqual(items[5], { kind: 'tool', name: '!', summary: 'ls -la' });
   assert.deepStrictEqual(items[6], { kind: 'toolResult', text: 'a > b' });
   assert.deepStrictEqual(items[7], { kind: 'note', title: 'Background task', text: 'Background command "build" failed' });
+});
+
+test('an interrupted request is a note, not a bubble', () => {
+  const items = injected();
+  assert.deepStrictEqual(items.slice(-2), [
+    { kind: 'note', title: 'Interrupted by user', text: '' },
+    { kind: 'note', title: 'Interrupted by user', text: '' },
+  ]);
+  assert.ok(!items.some(i => i.kind === 'user' && i.text.includes('interrupted')));
 });
