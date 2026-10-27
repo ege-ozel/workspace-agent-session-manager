@@ -6,7 +6,7 @@ import {
   scanBackward, readHead, grabString, inWorkspace, fallbackTitle, pidAlive, norm, appendJsonLine,
 } from '../util';
 import { ChatItem, Focus, Provider, Snapshot, SessionEntry, SessionScope, TranscriptChunk } from '../api';
-import { readLines } from '../transcript';
+import { lazyImage, readLines } from '../transcript';
 import { dataFile, dirOf, liveLimitsState } from './statusline';
 
 export const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
@@ -360,19 +360,28 @@ function toolSummary(input: any): string {
   return '';
 }
 
-const imageOf = (b: any): ChatItem | undefined =>
+interface RawImage { mime: string; data: string }
+const imageOf = (b: any): RawImage | undefined =>
   b?.type === 'image' && b.source?.type === 'base64' && typeof b.source.data === 'string'
-    ? { kind: 'image', mime: String(b.source.media_type ?? 'image/png'), data: b.source.data }
+    ? { mime: String(b.source.media_type ?? 'image/png'), data: b.source.data }
     : undefined;
 
+/** Image items of one line: the picture itself, or, with `at`, only where it sits in the file (see lazyImage). */
+function imageMaker(at?: { file: string; offset: number }) {
+  let n = 0;
+  return (r: RawImage): ChatItem => (at
+    ? lazyImage(at.file, at.offset, n++, r.mime, line => claudeItems([line]))
+    : { kind: 'image', mime: r.mime, data: r.data });
+}
+
 /** A tool result's content is a string or blocks: images stay in place, all its text becomes one item. */
-function resultItems(b: any): ChatItem[] {
+function resultItems(b: any, image: (r: RawImage) => ChatItem): ChatItem[] {
   if (typeof b.content === 'string') return b.content ? [{ kind: 'toolResult', text: b.content, ...(b.is_error && { error: true }) }] : [];
   const out: ChatItem[] = [];
   let text: Extract<ChatItem, { kind: 'toolResult' }> | undefined;
   for (const c of Array.isArray(b.content) ? b.content : []) {
     const img = imageOf(c);
-    if (img) out.push(img);
+    if (img) out.push(image(img));
     else if (c?.type === 'text' && c.text) {
       if (text) text.text += '\n' + c.text;
       else {
@@ -407,10 +416,11 @@ function userTextItems(text: string): ChatItem[] {
 }
 
 /** Transcript lines → renderable items. Bookkeeping (titles, system lines, meta messages, thinking) is skipped. */
-export function claudeItems(lines: string[]): ChatItem[] {
+export function claudeItems(lines: string[], at?: { file: string; offsets: number[] }): ChatItem[] {
   const out: ChatItem[] = [];
-  for (const line of lines) {
-    const j = parseJson(line);
+  for (let li = 0; li < lines.length; li++) {
+    const j = parseJson(lines[li]);
+    const image = imageMaker(at && { file: at.file, offset: at.offsets[li] });
     const role = j?.type;
     if ((role !== 'user' && role !== 'assistant') || j.isMeta) continue;
     const content = j.message?.content;
@@ -427,16 +437,16 @@ export function claudeItems(lines: string[]): ChatItem[] {
     for (const b of Array.isArray(content) ? content : []) {
       if (b?.type === 'text' && typeof b.text === 'string') out.push(...text(b.text));
       else if (b?.type === 'tool_use' && typeof b.name === 'string') out.push({ kind: 'tool', name: b.name, summary: toolSummary(b.input) });
-      else if (b?.type === 'tool_result') out.push(...resultItems(b));
-      else { const img = imageOf(b); if (img) out.push(img); }
+      else if (b?.type === 'tool_result') out.push(...resultItems(b, image));
+      else { const img = imageOf(b); if (img) out.push(image(img)); }
     }
   }
   return out;
 }
 
 export async function readClaudeTranscript(file: string, from = 0): Promise<TranscriptChunk> {
-  const { lines, next } = readLines(file, from);
-  return { items: claudeItems(lines), next };
+  const { lines, offsets, next } = readLines(file, from);
+  return { items: claudeItems(lines, { file, offsets }), next };
 }
 
 /** The transcript path of a closed session, validated to be <base>/<project>/<id>.jsonl. */

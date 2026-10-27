@@ -123,3 +123,45 @@ test('an interrupted request is a note, not a bubble', () => {
   ]);
   assert.ok(!items.some(i => i.kind === 'user' && i.text.includes('interrupted')));
 });
+
+const img = (b64) => ({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: b64 } });
+const jline = (o) => JSON.stringify(o) + '\n';
+
+test('readLines gives each line its byte offset', () => {
+  const f = tmp('offsets.jsonl', '{"a":"é"}\n\n{"b":2}\r\n{"c":3}');
+  const r = readLines(f, 0);
+  const bytes = fs.readFileSync(f);
+  assert.deepStrictEqual(r.lines, ['{"a":"é"}', '{"b":2}']);
+  assert.deepStrictEqual(r.offsets, [0, bytes.indexOf('{"b"')]);
+  assert.strictEqual(r.next, bytes.indexOf('{"c"'));
+  assert.strictEqual(readLines(f, r.next).offsets.length, 0);
+});
+
+test('images stay on disk: no data, a loader', async () => {
+  const { items } = await claude.readTranscript(FIXTURE, 0);
+  const images = items.filter(i => i.kind === 'image');
+  assert.strictEqual(images.length, 2);
+  for (const i of images) {
+    assert.ok(!('data' in i));
+    assert.strictEqual(typeof i.load, 'function');
+  }
+});
+
+test('load returns the base64, also for the n-th image of one line', async () => {
+  const f = tmp('two.jsonl', jline({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: [img('QUFB'), { type: 'text', text: 'x' }, img('QkJC')] }] } }));
+  const { items } = await claude.readTranscript(f, 0);
+  const images = items.filter(i => i.kind === 'image');
+  assert.deepStrictEqual(await Promise.all(images.map(i => i.load())), ['QUFB', 'QkJC']);
+  const fixture = (await claude.readTranscript(FIXTURE, 0)).items.filter(i => i.kind === 'image');
+  assert.deepStrictEqual(await Promise.all(fixture.map(i => i.load())), ['iVBORw0KGgo=', 'iVBORw0KGgo=']);
+});
+
+test('an old item still loads the right image after lines were appended', async () => {
+  const f = tmp('grow.jsonl', jline({ type: 'user', message: { role: 'user', content: [img('QUFB')] } }));
+  const first = await claude.readTranscript(f, 0);
+  fs.appendFileSync(f, jline({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } })
+    + jline({ type: 'user', message: { role: 'user', content: [img('Q0ND')] } }));
+  const more = await claude.readTranscript(f, first.next);
+  assert.strictEqual(await first.items[0].load(), 'QUFB');
+  assert.strictEqual(await more.items.find(i => i.kind === 'image').load(), 'Q0ND');
+});

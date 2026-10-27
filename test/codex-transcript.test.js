@@ -55,3 +55,35 @@ test('readTranscript reads a rollout file', async () => {
   assert.strictEqual(r.items.length, 10);
   assert.strictEqual(r.next, fs.statSync(FIXTURE).size);
 });
+
+const { readLines } = require('../out/transcript');
+const tmpFile = (name, content) => {
+  const f = path.join(process.env.CODEX_HOME, name);
+  fs.writeFileSync(f, content);
+  return f;
+};
+const png = (b64) => ({ type: 'input_image', image_url: 'data:image/png;base64,' + b64 });
+const rline = (payload) => JSON.stringify({ type: 'response_item', payload }) + '\n';
+
+test('images stay on disk: no data, a loader', async () => {
+  const { items } = await codex.readTranscript(FIXTURE, 0);
+  const images = items.filter(i => i.kind === 'image');
+  assert.strictEqual(images.length, 2);
+  for (const i of images) {
+    assert.ok(!('data' in i));
+    assert.strictEqual(typeof i.load, 'function');
+  }
+  assert.deepStrictEqual(await Promise.all(images.map(i => i.load())), ['iVBORw0KGgo=', 'iVBORw0KGgo=']);
+});
+
+test('load finds the n-th image of one output, and survives appended lines', async () => {
+  const f = tmpFile('two.jsonl', rline({ type: 'function_call_output', call_id: 'c', output: [png('QUFB'), { type: 'input_text', text: 't' }, png('QkJC')] }));
+  const first = await codex.readTranscript(f, 0);
+  const images = first.items.filter(i => i.kind === 'image');
+  assert.deepStrictEqual(await Promise.all(images.map(i => i.load())), ['QUFB', 'QkJC']);
+  fs.appendFileSync(f, rline({ type: 'message', role: 'user', content: [png('Q0ND')] }));
+  const more = await codex.readTranscript(f, first.next);
+  assert.strictEqual(await images[1].load(), 'QkJC');
+  assert.strictEqual(await more.items[0].load(), 'Q0ND');
+  assert.ok(readLines(f, 0).offsets.length === 2);
+});

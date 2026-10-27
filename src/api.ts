@@ -59,7 +59,8 @@ export type ChatItem =
   | { kind: 'toolResult'; text: string; error?: boolean }
   /** Not written by the user or the agent (compaction, background task, hook): shown folded and dim. */
   | { kind: 'note'; title: string; text: string }
-  | { kind: 'image'; mime: string; data: string };  // base64, no "data:" prefix
+  /** base64 without the "data:" prefix: `data` itself, or `load()` when the provider keeps pictures on disk. */
+  | { kind: 'image'; mime: string; data?: string; load?(): Promise<string> };
 
 /** `next` is the byte offset to pass as `from` on the next read. */
 export interface TranscriptChunk { items: ChatItem[]; next: number }

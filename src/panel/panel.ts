@@ -211,6 +211,18 @@ class SessionPanel {
     this.post({ type: 'items', reset: true, items: toView(this.items.slice(this.shownFrom), this.shownFrom), hasEarlier: this.shownFrom > 0 });
   }
 
+  /** A picture is read from the transcript when the webview scrolls to it (`data` for providers that carry it inline). */
+  private async sendImage(ref: number) {
+    const it = this.items[ref];
+    if (it?.kind !== 'image') return;
+    try {
+      const data = it.data ?? await it.load?.();
+      if (!data || this.items[ref] !== it) return;
+      const mime = /^image\/[\w.+-]+$/.test(it.mime) ? it.mime : 'image/png';
+      this.post({ type: 'image', ref, src: `data:${mime};base64,${data}` });
+    } catch { /* gone from the file: the placeholder stays */ }
+  }
+
   private onMessage(m: any) {
     switch (m?.type) {
       case 'ready':
@@ -225,14 +237,9 @@ class SessionPanel {
         this.post({ type: 'items', prepend: true, items: toView(this.items.slice(this.shownFrom, to), this.shownFrom), hasEarlier: this.shownFrom > 0 });
         break;
       }
-      case 'image': {
-        const it = typeof m.ref === 'number' ? this.items[m.ref] : undefined;
-        if (it?.kind === 'image') {
-          const mime = /^image\/[\w.+-]+$/.test(it.mime) ? it.mime : 'image/png';
-          this.post({ type: 'image', ref: m.ref, src: `data:${mime};base64,${it.data}` });
-        }
+      case 'image':
+        if (typeof m.ref === 'number') void this.sendImage(m.ref);
         break;
-      }
       case 'link': {
         try {
           const u = new URL(String(m.href));
