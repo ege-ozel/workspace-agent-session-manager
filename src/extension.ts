@@ -6,8 +6,9 @@ import { CLAUDE_DIR, Limits, claude, parseUsageText, savePastedLimits } from './
 import { disableLiveLimits, enableLiveLimits, liveLimitsScript, liveLimitsState, refreshLiveLimitsScript } from './providers/statusline';
 import { codex } from './providers/codex';
 import { norm, processParents } from './util';
-import { SavedTerminal, resumedCodex, terminalKey } from './terminals';
-import { PanelHost, disposePanels, hasPanel, openPanel as openSessionPanel, updatePanels } from './panel/panel';
+import { SavedTerminal, resumedCodex, terminalKey, codexResumeProcesses } from './terminals';
+import { PanelHost, disposePanels, hasPanel, openPanel as openSessionPanel, updatePanels, registerPanelRestore } from './panel/panel';
+import { preferredView, SessionView } from './panel/preference';
 import { PickItem, PickSession, ago as agoFrom, pickItems, sessionKey, waitFor } from './panel/pick';
 
 /** Built-in agents. To add one: create src/providers/<agent>.ts exporting a Provider and list it here. */
@@ -39,7 +40,20 @@ const pctx: ProviderContext = {
  * The session in the active terminal: ours are known exactly (resumed id or agent pid), an agent run in a shell by
  * its process; for any other terminal, its folder. Another agent's terminal says nothing about this provider.
  */
+let panelFocus: { providerId: string; id: string } | undefined;
+
+function focusedSession(providerId: string, s: SessionEntry): boolean {
+  if (panelFocus) return panelFocus.providerId === providerId && panelFocus.id === s.id;
+  const t = vscode.window.activeTerminal;
+  return !!t && windowTerminalFor(s) === t;
+}
+
 function focusFor(id: string): Focus | undefined {
+  if (panelFocus) {
+    if (panelFocus.providerId !== id) return undefined;
+    const s = sessionOf(id, panelFocus.id);
+    return { sessionId: panelFocus.id, pid: s?.pid, cwd: s?.cwd };
+  }
   const t = vscode.window.activeTerminal;
   if (!t) return undefined;
   const info = launched.get(t);
@@ -304,9 +318,11 @@ export function activate(ctx: vscode.ExtensionContext): Api {
   memento = ctx.globalState;
   syncRevealContext();
   terminalState = ctx.workspaceState;
+  sessionViews = ctx.workspaceState.get<Record<string, SessionView>>('sessionViews', {});
   for (const r of terminalState.get<SavedTerminal[]>(TERMINALS, [])) savedTerminals.set(r.pid, r);
   syncLiveLimitsContext();
   for (const p of BUILT_IN) ctx.subscriptions.push(register(p));
+  ctx.subscriptions.push(registerPanelRestore(ctx, panelHost, id => entries.get(id)?.p));
 
   let poll: NodeJS.Timeout | undefined;
   const startPoll = () => {
@@ -354,7 +370,7 @@ export function activate(ctx: vscode.ExtensionContext): Api {
     }),
     vscode.commands.registerCommand('workspaceAgentSessions.openPanelPick', openPanelPick),
     vscode.commands.registerCommand('workspaceAgentSessions.openSessionPanel', (n: PNode) => {
-      if (n?.kind === 'session' && n.e.p.readTranscript) openSessionPanel(panelHost, n.e.p, n.s, extCtx);
+      if (n?.kind === 'session') void openConversation(n.e, n.s, true);
     }),
     vscode.commands.registerCommand('workspaceAgentSessions.deleteSessions', async (arg?: string | Node) => {
       const e = await pickProvider(typeof arg === 'string' ? arg : arg?.e.p.id, true);
@@ -492,8 +508,35 @@ function openSessionRow(id: string, sessionId: string) {
   const e = entries.get(id);
   const s = e?.open?.find(x => x.id === sessionId);
   if (!e || !s) return;
+  openConversation(e, s);
+}
+
+let sessionViews: Record<string, SessionView> = {};
+function rememberView(providerId: string, id: string, view: SessionView) {
+  const key = `${providerId}:${id}`;
+  if (sessionViews[key] === view) return;
+  sessionViews[key] = view;
+  void extCtx.workspaceState.update('sessionViews', sessionViews);
+}
+
+async function openConversation(e: Entry, s: SessionEntry, ask = false) {
+  let view = preferredView(sessionViews[`${e.p.id}:${s.id}`], !!e.p.readTranscript);
+  if (ask && e.p.readTranscript && (e.p.terminal || windowTerminalFor(s))) {
+    const pick = await vscode.window.showQuickPick([
+      { label: '$(preview) Panel', view: 'panel' as const, description: view === 'panel' ? 'Last used' : undefined },
+      { label: '$(terminal) Terminal', view: 'terminal' as const, description: view === 'terminal' ? 'Last used' : undefined },
+    ].sort((a, b) => Number(b.view === view) - Number(a.view === view)), { title: s.title, placeHolder: 'Where would you like to continue this conversation?' });
+    if (!pick) return;
+    view = pick.view;
+    rememberView(e.p.id, s.id, view);
+  }
+  if (view === 'panel') {
+    openSessionPanel(panelHost, e.p, s, extCtx);
+    return;
+  }
   const t = windowTerminalFor(s);
-  if (t) t.show();
+  if (t) { rememberView(e.p.id, s.id, 'terminal'); t.show(); }
+  else if (e.p.terminal && (!s.live || ask)) launch(e, s.cwd, s);
   else void showDetails(s, e);
 }
 
@@ -510,21 +553,18 @@ function meter(label: string, used: number | undefined, note: string, stale = fa
     + (note ? `<div class="n">${esc(note)}</div>` : '');
 }
 
-/**
- * One row per open session, with its own name and context bar. Only from two sessions on: with a single one the
- * Context meter above already names it, and a duplicate row would be noise.
- */
+/** One row per open session, with its own name and context bar. */
 function sessionRows(e: Entry): string {
   const list = (e.open ?? []).slice().sort((a, b) => b.mtime - a.mtime);
-  if (list.length < 2) return '';
+  if (!list.length) return '';
   // Repos only matter once the rows span more than one; otherwise the title alone is clearer.
   const repos = new Set(list.map(s => s.cwd && norm(s.cwd)).filter(Boolean));
   return list.map(s => {
-    const cur = e.last?.sessionId ? e.last.sessionId === s.id : e.last?.session === s.title;
+    const cur = focusedSession(e.p.id, s);
     const t = windowTerminalFor(s);
-    const act = !!t && t === vscode.window.activeTerminal;
+    const act = cur;
     const repo = repos.size > 1 && s.cwd ? ` · ${path.basename(s.cwd)}` : '';
-    const tip = [s.contextDetail, modelLine(s), s.cwd, t &&`Terminal: ${t.name}${act ? ' (active)' : ''}`].filter(Boolean).join('\n');
+    const tip = [s.title, s.contextDetail, modelLine(s), s.cwd, t &&`Terminal: ${t.name}${act ? ' (active)' : ''}`].filter(Boolean).join('\n');
     return `<div class="s${cur ? ' cur' : ''}${act ? ' act' : ''}" data-s="${esc(s.id)}" title="${esc(tip)}">`
       + `<span class="sl">${esc(s.title)}${esc(repo)}</span>${BAR(s.ctxUsed, false)}`
       + `<span class="p">${esc(pct(s.ctxUsed))}</span></div>`;
@@ -554,7 +594,8 @@ function usageHtml(): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
- body { font: var(--vscode-font-weight) var(--vscode-font-size)/1.4 var(--vscode-font-family); color: var(--vscode-foreground); padding: 6px 12px 10px; }
+ body { --blue: #3794ff; --teal: #2ec4b6; --orange: #f0883e; font: var(--vscode-font-weight) var(--vscode-font-size)/1.4 var(--vscode-font-family); color: var(--vscode-foreground); padding: 6px 12px 10px; }
+ body.vscode-light { --blue: #0451a5; --teal: #0f766e; --orange: #b45309; }
  section { padding: 6px 0 2px; cursor: pointer; }
  section + section { border-top: 1px solid var(--vscode-widget-border, transparent); margin-top: 4px; }
  h2 { font-size: 1em; font-weight: 600; margin: 0 0 6px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
@@ -570,8 +611,9 @@ function usageHtml(): string {
  .bar { flex: 1; height: 6px; border-radius: 3px; overflow: hidden; background: var(--vscode-scrollbarSlider-background, rgba(128,128,128,.25)); }
  .bar i { display: block; height: 100%; border-radius: 3px; }
  .bar.stale i { opacity: .3; }
- .ok { background: var(--vscode-progressBar-background); }
- .warn { background: var(--vscode-editorWarning-foreground); }
+ .ok { background: var(--blue); }
+ .ss .ok { background: var(--teal); }
+ .warn { background: var(--orange); }
  .err { background: var(--vscode-editorError-foreground); }
  .ss { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
  .rows { flex: 1; min-width: 0; }
@@ -580,7 +622,7 @@ function usageHtml(): string {
  /* The session of the active terminal, like the Projects view's highlighted row. */
  .s.act { background: var(--vscode-list-inactiveSelectionBackground, rgba(128,128,128,.2)); }
  .s.act .sl { opacity: 1; }
- .sl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9em; opacity: .7; }
+ .sl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1em; opacity: .85; }
  .s.cur .sl { opacity: 1; font-weight: 600; }
  .s:hover .sl { opacity: 1; text-decoration: underline; }
  .s .bar { flex: 0 0 64px; }
@@ -667,8 +709,7 @@ const keyOf = (x: PSession) => `${x.e.p.id}:${x.s.id}`;
 
 /** Follows the active terminal: its session's row is highlighted, and selected and scrolled to when it changes. */
 function syncHighlight() {
-  const t = vscode.window.activeTerminal;
-  const hit = t && shownSessions.find(x => !x.archived && windowTerminalFor(x.s) === t);
+  const hit = shownSessions.find(x => !x.archived && focusedSession(x.e.p.id, x.s));
   const key = hit ? keyOf(hit) : undefined;
   if (key === highlightKey) return;
   const prev = shownSessions.find(x => keyOf(x) === highlightKey);
@@ -744,6 +785,27 @@ async function trackTerminal(t: vscode.Terminal) {
   adoptTerminals();
 }
 
+let recoveringCodex: Promise<void> | undefined;
+function recoverCodexTerminals(): Promise<void> {
+  if (recoveringCodex) return recoveringCodex;
+  const candidates = [...termPids].filter(([t]) => !launched.has(t) && !t.exitStatus);
+  const e = entries.get('codex');
+  if (!e || !candidates.length) return Promise.resolve();
+  recoveringCodex = codexResumeProcesses().then(processes => {
+    for (const [t, pid] of candidates) {
+      const id = processes.get(pid);
+      const s = id && e.open?.find(s => s.id === id);
+      if (!s || t.exitStatus || launched.has(t) || !vscode.window.terminals.includes(t)) continue;
+      // Both the terminal's actual pid and the CLI's exact resume id match. No title/cwd inference.
+      const info: Launched = { e, sessionId: s.id, pid, cwd: s.cwd, at: Date.now() };
+      launched.set(t, info);
+      saveTerminal(t, info);
+      syncHighlight();
+    }
+  }).finally(() => { recoveringCodex = undefined; });
+  return recoveringCodex;
+}
+
 /** The terminal of this window running the agent process `pid`, as its process or under a shell. */
 function hostTerminal(pid: number | undefined): vscode.Terminal | undefined {
   for (let x = pid, hops = 0; x !== undefined && hops < 6; x = parents.get(x), hops++) {
@@ -757,34 +819,87 @@ const windowTerminalFor = (s: SessionEntry) => terminalFor(s) ?? hostTerminal(s.
 
 let extCtx: vscode.ExtensionContext;
 const sessionOf = (providerId: string, id: string) =>
-  shownSessions.find(x => x.e.p.id === providerId && x.s.id === id)?.s
-  ?? openSessions().find(x => x.e.p.id === providerId && x.s.id === id)?.s;
+  openSessions().find(x => x.e.p.id === providerId && x.s.id === id)?.s
+  ?? shownSessions.find(x => x.e.p.id === providerId && x.s.id === id)?.s;
 
 /** What the Panel view needs from this file. */
 const panelHost: PanelHost = {
+  viewOpened: rememberView,
+  focusSession: (providerId, id, active) => {
+    if (active) {
+      rememberView(providerId, id, 'panel');
+      if (panelFocus?.providerId === providerId && panelFocus.id === id) return;
+      panelFocus = { providerId, id };
+    } else {
+      if (panelFocus?.providerId !== providerId || panelFocus.id !== id) return;
+      panelFocus = undefined;
+    }
+    usageView.render();
+    syncHighlight();
+    refreshAll();
+  },
   session: sessionOf,
   // Ours, else any terminal of this window the agent runs in (typed into a shell): the Panel types into both.
   terminal: (providerId, id) => {
-    const own = [...launched].find(([, i]) => i.e.p.id === providerId && i.sessionId === id)?.[0];
+    const own = [...launched].find(([t, i]) => !t.exitStatus && i.e.p.id === providerId && i.sessionId === id)?.[0];
     const s = own ? undefined : sessionOf(providerId, id);
     return own ?? (s?.live ? hostTerminal(s.pid) : undefined);
   },
   ours: t => launched.has(t),
+  canConnectTerminal: providerId => providerId === 'codex',
+  connectTerminal: async (providerId, id) => {
+    if (providerId !== 'codex') return false;
+    const e = entries.get(providerId);
+    const s = sessionOf(providerId, id);
+    if (!e || !s?.live) return false;
+    const candidates = vscode.window.terminals.filter(t => {
+      const opt = t.creationOptions as vscode.TerminalOptions;
+      const known = launched.get(t);
+      const resumed = resumedCodex(t.name, opt);
+      return !t.exitStatus && !known && (!resumed || resumed === id) && !!opt.shellPath
+        && /^codex(?:\.exe|\.cmd)?$/i.test(path.basename(opt.shellPath));
+    });
+    if (!candidates.length) {
+      void vscode.window.showInformationMessage('No unassigned Codex terminal could be identified in this window. Use Continue here in the panel to reopen the conversation.');
+      return false;
+    }
+    const pick = await vscode.window.showQuickPick(candidates.map(t => ({ label: t.name, t })),
+      { placeHolder: `Choose the Codex terminal showing "${s.title}" (the pending message will be sent there)` });
+    if (!pick || pick.t.exitStatus || !vscode.window.terminals.includes(pick.t) || launched.has(pick.t)) return false;
+    const pid = await pick.t.processId;
+    if (pid === undefined || pick.t.exitStatus || !vscode.window.terminals.includes(pick.t)) return false;
+    const info: Launched = { e, sessionId: id, pid, cwd: s.cwd, at: Date.now() };
+    launched.set(pick.t, info);
+    saveTerminal(pick.t, info);
+    syncHighlight();
+    return true;
+  },
   showTerminal: (providerId, id) => {
     const s = sessionOf(providerId, id);
     const t = s && windowTerminalFor(s);
-    t?.show();
+    if (t) { rememberView(providerId, id, 'terminal'); t.show(); }
     return !!t;
   },
-  resume: (providerId, id) => {
+  resume: (providerId, id, background) => {
+    const existing = panelHost.terminal(providerId, id);
+    if (existing && panelHost.terminalSessionId(existing) === id) { if (!background) existing.show(); return true; }
     const s = sessionOf(providerId, id);
     const e = entries.get(providerId);
-    return !!(s && e?.p.terminal && launch(e, s.cwd, s));
+    return !!(s && e?.p.terminal && launch(e, s.cwd, s, undefined, background));
   },
   snapshot: providerId => entries.get(providerId)?.last,
   // Read right now, for the checks before typing: the cached entry can be seconds old.
   fresh: async (providerId, id) => {
-    try { return (await entries.get(providerId)?.p.listSessions?.(pctx, 'open'))?.find(s => s.id === id); } catch { return undefined; }
+    const e = entries.get(providerId);
+    const p = e?.p;
+    if (!e || !p?.listSessions) throw new Error('Session listing is unavailable');
+    const list = await p.listSessions(pctx, 'open');
+    e.open = list;
+    await Promise.all(vscode.window.terminals.map(trackTerminal));
+    if (providerId === 'codex') await recoverCodexTerminals();
+    resolveLaunched();
+    adoptTerminals();
+    return list.find(s => s.id === id);
   },
   // The session our terminal is on now: resolveLaunched moves it on after /clear or /resume.
   terminalSessionId: t => launched.get(t)?.sessionId ?? openSessions().find(x => x.s.pid !== undefined && hostTerminal(x.s.pid) === t)?.s.id,
@@ -807,24 +922,6 @@ function adoptTerminals() {
       changed = true;
     }
   }
-  // Codex has no pid. A terminal of ours from before the records existed is placed by its name (our "Codex · title")
-  // or, failing that, by being the only unclaimed open Codex session in its folder.
-  for (const [t, pid] of termPids) {
-    if (launched.has(t) || t.exitStatus) continue;
-    const o = t.creationOptions as vscode.TerminalOptions;
-    const name = o.name ?? t.name;
-    if (!name.startsWith('Codex · ') || !o.shellPath || !/^codex(?:.exe|.cmd)?$/i.test(path.basename(o.shellPath))) continue;
-    const cwd = typeof o.cwd === 'string' ? o.cwd : o.cwd?.fsPath;
-    const free = openSessions().filter(x => x.e.p.id === 'codex' && !terminalFor(x.s));
-    const byTitle = free.filter(x => x.s.title === name.slice('Codex · '.length));
-    const byCwd = free.filter(x => cwd && x.s.cwd && norm(x.s.cwd) === norm(cwd));
-    const hit = byTitle.length === 1 ? byTitle[0] : byCwd.length === 1 ? byCwd[0] : undefined;
-    if (!hit) continue;
-    const info: Launched = { e: hit.e, sessionId: hit.s.id, pid, cwd: hit.s.cwd, at: hit.s.mtime };
-    launched.set(t, info);
-    saveTerminal(t, info);
-    changed = true;
-  }
   const pids = new Set(live.map(x => x.s.pid!));
   for (const p of asked) if (!pids.has(p)) asked.delete(p);
   // `source` is set for agents started outside a terminal (the Claude panel): no shell to find.
@@ -846,7 +943,7 @@ function terminalName(base: string): string {
   for (let n = 2; ; n++) if (!taken.has(`${base} #${n}`)) return `${base} #${n}`;
 }
 
-function launch(e: Entry, cwd: string | undefined, s?: SessionEntry, options?: LaunchOptions): { t: vscode.Terminal; info: Launched } | undefined {
+function launch(e: Entry, cwd: string | undefined, s?: SessionEntry, options?: LaunchOptions, background = false): { t: vscode.Terminal; info: Launched } | undefined {
   // Claude Code writes a transcript only once the first message is sent. Resuming a session without one makes the
   // CLI exit at once ("terminated with exit code 1"), so say why instead.
   if (s?.file && !fs.existsSync(s.file)) {
@@ -863,6 +960,7 @@ function launch(e: Entry, cwd: string | undefined, s?: SessionEntry, options?: L
     iconPath: new vscode.ThemeIcon('hubot'),
   });
   const info: Launched = { e, sessionId: s?.id, cwd, at: Date.now() };
+  if (s && !background) rememberView(e.p.id, s.id, 'terminal');
   launched.set(t, info);
   void t.processId.then(pid => {
     if (launched.get(t) !== info || t.exitStatus) return;
@@ -870,10 +968,10 @@ function launch(e: Entry, cwd: string | undefined, s?: SessionEntry, options?: L
     saveTerminal(t, info);
     // Started from the quick pick chain, focus went back to where the chain was opened (the Projects view) after
     // the show() below, and keys meant for the agent moved the tree instead. Take it again once the agent is up.
-    if (vscode.window.activeTerminal === t) t.show();
+    if (!background && vscode.window.activeTerminal === t) t.show();
     refresh(e);
   });
-  t.show();
+  if (!background) t.show();
   syncAgentContext();
   reloadProjects();
   return { t, info };
@@ -1148,7 +1246,7 @@ const projects: vscode.TreeDataProvider<PNode> = {
     const { e: { p }, s, archived } = n;
     const t = terminalFor(s);
     const w = archived ? undefined : t ?? hostTerminal(s.pid);
-    const here = !!w && w === vscode.window.activeTerminal;
+    const here = !archived && focusedSession(p.id, s);
     const it = new vscode.TreeItem(here ? { label: s.title, highlights: [[0, s.title.length]] } : s.title);
     it.description = `${p.name} · ${sessionDesc(s)}`;
     it.tooltip = [s.title, modelLine(s), s.ctxUsed !== undefined ? `Context ${pct(s.ctxUsed)}` : undefined, s.cwd,
@@ -1177,7 +1275,7 @@ const projects: vscode.TreeDataProvider<PNode> = {
     // Clicking a row means "take me to this conversation": its terminal in this window if it has one, else open it
     // in a new one. A session live somewhere we cannot reach (the agent's own panel) must not be opened twice, so
     // it falls back to the details dialog.
-    const click = w ? 'workspaceAgentSessions.focusSession'
+    const click = p.readTranscript ? 'workspaceAgentSessions.openSessionPanel' : w ? 'workspaceAgentSessions.focusSession'
       : !open && p.terminal && !archived ? 'workspaceAgentSessions.resumeSession'
       : 'workspaceAgentSessions.sessionDetails';
     it.command = { command: click, title: 'Open session', arguments: [n] };
@@ -1400,7 +1498,7 @@ function registerProjects(): vscode.Disposable[] {
       (n: PNode) => { if (n?.kind === 'session') void sendSlash(terminalFor(n.s), q.command); })),
     vscode.commands.registerCommand('workspaceAgentSessions.rowRename', renameRow),
     vscode.commands.registerCommand('workspaceAgentSessions.focusSession', (n: PNode) => {
-      if (n?.kind === 'session') windowTerminalFor(n.s)?.show();
+      if (n?.kind === 'session') void openConversation(n.e, n.s, true);
     }),
     vscode.commands.registerCommand('workspaceAgentSessions.refreshProjects', () => projectsChanged.fire()),
     vscode.commands.registerCommand('workspaceAgentSessions.newSession', async (n: PNode) => {
@@ -1423,7 +1521,7 @@ function registerProjects(): vscode.Disposable[] {
     vscode.commands.registerCommand('workspaceAgentSessions.moveRepoUp', (n: PNode) => moveRepo(n, 'up')),
     vscode.commands.registerCommand('workspaceAgentSessions.moveRepoDown', (n: PNode) => moveRepo(n, 'down')),
     vscode.commands.registerCommand('workspaceAgentSessions.moveRepoToTop', (n: PNode) => moveRepo(n, 'top')),
-    vscode.commands.registerCommand('workspaceAgentSessions.resumeSession', act(n => void launch(n.e, n.s.cwd, n.s))),
+    vscode.commands.registerCommand('workspaceAgentSessions.resumeSession', act(n => openConversation(n.e, n.s, true))),
     ...['revealRepoIsOn', 'revealRepoIsOff'].map(c => vscode.commands.registerCommand(`workspaceAgentSessions.${c}`, async () => {
       const cfg = vscode.workspace.getConfiguration('workspaceAgentSessions');
       await cfg.update('revealActiveRepo', !cfg.get<boolean>('revealActiveRepo'), vscode.ConfigurationTarget.Global);
@@ -1593,7 +1691,7 @@ async function showSessions(id?: string, back?: () => void, initial: SessionScop
     if (!it?.s) return;
     // Already running in this window: go there rather than offer to start it a second time.
     const t = windowTerminalFor(it.s);
-    if (t) { qp.hide(); t.show(); } else void keepOpen(showDetails(it.s, e));
+    if (t || e.p.readTranscript) { qp.hide(); openConversation(e, it.s); } else void keepOpen(showDetails(it.s, e));
   });
   qp.onDidTriggerButton(b => {
     if (b === DELETE_MANY) { qp.hide(); void deleteMany(e, () => showSessions(p.id, back, scope)); return; }
@@ -1680,8 +1778,9 @@ async function showDetails(s: SessionEntry, e?: Entry) {
   // terminals is reachable, so that one is offered instead.
   const elsewhere = s.live && !t && !!e?.p.terminal;
   const detail = lines.filter(Boolean).join('\n')
-    + (elsewhere ? `\n\nThis conversation is already open in ${s.source ?? 'another process'}. Resuming it here starts a`
-      + ' second process on the same conversation, which the agent may refuse while the other one holds it.' : '');
+    + (elsewhere ? '\n\nThis conversation is detected as running, but this window has no connected terminal.'
+      + (s.source ? ` Recorded source: ${s.source}.` : '')
+      + ' You can resume it here; the agent may ask you to confirm before continuing.' : '');
   // A modal's text cannot be selected with the mouse, so what is worth taking away gets a button instead.
   const OPEN = 'Open folder', PATH = 'Copy path', ID = 'Copy id', RESUME = 'Resume here anyway', GO = 'Go to terminal';
   const pick = await vscode.window.showInformationMessage(s.title, { modal: true, detail },

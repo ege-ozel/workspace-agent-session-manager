@@ -38,8 +38,8 @@ test('escaped pipe', () => {
 
 test('fenced code', () => {
   const h = renderMarkdown('```ts\nconst a = 1 < 2\n```');
-  assert.ok(h.includes('<pre><code class="lang-ts">'));
-  assert.ok(h.includes('1 &lt; 2'));
+  assert.ok(h.includes('<pre class="source"><code class="lang-ts">'));
+  assert.ok(h.replace(/<[^>]+>/g, '').includes('1 &lt; 2'));
 });
 
 test('inline', () => {
@@ -62,9 +62,9 @@ test('crlf and turkish', () => {
 
 test('a fenced block inside a list item is a code block, not stray backticks', () => {
   const h = renderMarkdown('- **Fast:** run it\n  ```\n  ! code --install x\n\n  second\n  ```\n- **Next:** F5\n\nAfter.');
-  assert.strictEqual(count(h, /<pre>/g), 1);
+  assert.strictEqual(count(h, /<pre\b/g), 1);
   assert.strictEqual(count(h, /<li>/g), 2);
-  assert.ok(h.includes('<code>! code --install x\n\nsecond</code>'), h);
+  assert.ok(h.replace(/<[^>]+>/g, '').includes('! code --install x\n\nsecond'), h);
   assert.ok(!h.includes('`'), h);
   assert.ok(h.includes('<p>After.</p>'));
 });

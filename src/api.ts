@@ -36,6 +36,11 @@ export interface SessionEntry {
   live?: boolean;
   /** Live and currently working on a reply (vs. waiting for input). */
   busy?: boolean;
+  /** Epoch ms the current turn started, when recorded by the provider. */
+  busySince?: number;
+  /** A more specific live phase, when the agent records its beginning and end. */
+  activity?: 'compacting';
+  activitySince?: number;
   /** Process id of the agent running this session, when known. */
   pid?: number;
   /** % of this session's context window used. */
@@ -45,6 +50,10 @@ export interface SessionEntry {
   /** Model and reasoning effort of the last turn, as the agent's own log records them. */
   model?: string;
   effort?: string;
+  /** Last recorded collaboration mode and permission settings; these do not change the agent's settings. */
+  mode?: string;
+  approvalPolicy?: string;
+  sandbox?: string;
   /** Where the session was started, when it is worth saying: the agent's own app or panel, not a plain terminal. */
   source?: string;
   /** Claude only: set while the agent's terminal shows a question (permission prompt, menu), e.g. 'dialog open'. */
@@ -55,7 +64,7 @@ export interface SessionEntry {
 export type ChatItem =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; text: string }            // Markdown
-  | { kind: 'tool'; name: string; summary: string }
+  | { kind: 'tool'; name: string; summary: string; detail?: string }
   | { kind: 'toolResult'; text: string; error?: boolean }
   /** Not written by the user or the agent (compaction, background task, hook): shown folded and dim. */
   | { kind: 'note'; title: string; text: string }
@@ -176,6 +185,10 @@ export interface Provider {
   unarchiveSession?(session: SessionEntry, ctx: ProviderContext): void | Promise<void>;
   /** Enables the Panel view. `from`/`next`: byte offsets, so a live session only parses what was appended. */
   readTranscript?(file: string, from?: number): Promise<TranscriptChunk>;
+  /** Panel queue key for ordinary messages while busy (Enter at idle). The CLI owns its queue; dialogs still hold input. */
+  queueInput?: '\r' | '\t';
+  /** Native key for interrupting a busy turn, sent only after checking the exact live terminal/session again. */
+  interruptInput?: '\x1b' | '\x03';
 }
 
 export interface Api {

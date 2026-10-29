@@ -125,3 +125,11 @@ test('codex: the entry of a deleted rollout is dropped; an "open" listing keeps 
   xlist();
   assert.strictEqual(codexListCache.size, 1);
 });
+
+test('codex: the latest turn supplies repository, mode and permissions without reading credentials', () => {
+  fs.writeFileSync(xfile(3), meta(3) + j({ type: 'turn_context', payload: { model: 'test-model', effort: 'high', cwd: '/new/repo',
+    collaboration_mode: { mode: 'plan' }, approval_policy: 'on-request', sandbox_policy: { type: 'workspace-write' } } }));
+  const s = xlist().find(s => s.id === ID(3));
+  assert.deepStrictEqual([s.cwd, s.model, s.effort, s.mode, s.approvalPolicy, s.sandbox],
+    ['/new/repo', 'test-model', 'high', 'plan', 'on-request', 'workspace-write']);
+});

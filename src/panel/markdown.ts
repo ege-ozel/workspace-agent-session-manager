@@ -1,4 +1,5 @@
 /** Small Markdown to HTML renderer for the Panel view. Transcript text is untrusted: everything is escaped first. */
+import { codeTokens } from './code';
 
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -36,7 +37,9 @@ function blocks(lines: string[]): string {
         if (t.startsWith(fence[0].repeat(fence.length)) && !t.replace(new RegExp(`^\\${fence[0]}+`), '').trim()) { i++; break; }
         body.push(lines[i]);
       }
-      out.push(`<pre><code${lang ? ` class="lang-${lang}"` : ''}>${escapeHtml(body.join('\n'))}</code></pre>`);
+      const code = body.map((line, n) => `<span class="code-line" data-number="${n + 1}">${codeTokens(line).map(t =>
+        t.tone ? `<span class="syntax-${t.tone}">${escapeHtml(t.text)}</span>` : escapeHtml(t.text)).join('')}\n</span>`).join('');
+      out.push(`<pre class="source"><code${lang ? ` class="lang-${lang}"` : ''}>${code}</code></pre>`);
     } else if ((m = HEADING.exec(l))) {
       out.push(`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`);
       i++;

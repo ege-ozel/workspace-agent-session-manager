@@ -4,3 +4,5 @@ out/
 .playwright-mcp/
 local-planning/
 demo/
+.superpowers/brainstorm/.last-*
+.superpowers/brainstorm/*/state/

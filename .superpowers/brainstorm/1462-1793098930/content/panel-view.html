@@ -1,0 +1,83 @@
+<h2>Session in panel view: tables and images</h2>
+<p class="subtitle">Click the table's ⤢ button or the screenshot to open the enlarged view; click outside it (or press Esc) to close. Text in the table can be selected and copied. The "Terminal / Panel" switch at the top changes how the same session is shown.</p>
+
+<style>
+  .vs { background:#1e1e1e; color:#d4d4d4; border-radius:8px; overflow:hidden; font:13px/1.55 "Segoe UI",system-ui,sans-serif; border:1px solid #333; max-width:900px; margin:16px auto; }
+  .vs-top { display:flex; align-items:center; gap:10px; padding:8px 12px; background:#252526; border-bottom:1px solid #333; }
+  .vs-top .title { font-weight:600; color:#e6e6e6; }
+  .vs-top .meta { color:#8b8b8b; font-size:12px; }
+  .seg { margin-left:auto; display:flex; border:1px solid #444; border-radius:6px; overflow:hidden; }
+  .seg span { padding:3px 12px; font-size:12px; cursor:pointer; color:#aaa; }
+  .seg span.on { background:#0e639c; color:#fff; }
+  .vs-body { padding:16px 20px; max-height:560px; overflow:auto; }
+  .msg { margin-bottom:18px; }
+  .who { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#7a7a7a; margin-bottom:4px; }
+  .user { background:#2b2d31; padding:8px 12px; border-radius:8px; display:inline-block; }
+  .tool { font-family:Consolas,monospace; font-size:12px; color:#9cdcfe; background:#252526; border-left:3px solid #3a7bd5; padding:5px 10px; border-radius:4px; margin:6px 0; }
+  .tblwrap { position:relative; margin:10px 0; border:1px solid #3c3c3c; border-radius:6px; }
+  .tblwrap table { border-collapse:collapse; width:100%; font-size:12.5px; }
+  .tblwrap th { background:#2d2d30; text-align:left; font-weight:600; color:#e6e6e6; }
+  .tblwrap th, .tblwrap td { padding:6px 10px; border-bottom:1px solid #333; }
+  .tblwrap tr:last-child td { border-bottom:none; }
+  .tblwrap td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .tbtns { position:absolute; top:4px; right:4px; display:flex; gap:4px; opacity:.35; transition:opacity .15s; }
+  .tblwrap:hover .tbtns { opacity:1; }
+  .tbtns button { background:#3c3c3c; border:1px solid #555; color:#ddd; border-radius:4px; font-size:12px; padding:1px 7px; cursor:pointer; }
+  .shot { margin:8px 0; cursor:zoom-in; border-radius:6px; border:1px solid #3c3c3c; width:280px; height:160px; background:linear-gradient(135deg,#f5f7fb 0%,#e8ecf5 100%); position:relative; overflow:hidden; }
+  .shot .bar { height:18px; background:#d9dee8; }
+  .shot .h { margin:12px; height:14px; width:60%; background:#3a7bd5; border-radius:3px; }
+  .shot .l { margin:6px 12px; height:8px; background:#c4cad6; border-radius:3px; }
+  .shot .cap { position:absolute; bottom:0; left:0; right:0; font-size:11px; color:#fff; background:rgba(0,0,0,.55); padding:3px 8px; }
+  .ov { position:fixed; inset:0; background:rgba(0,0,0,.78); display:none; align-items:center; justify-content:center; z-index:9999; backdrop-filter:blur(3px); }
+  .ov.show { display:flex; }
+  .ov .box { background:#1e1e1e; border:1px solid #444; border-radius:10px; padding:20px; max-width:90vw; max-height:85vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.6); }
+  .ov .box .tblwrap table { font-size:15px; }
+  .ov .box .tblwrap th, .ov .box .tblwrap td { padding:9px 16px; }
+  .ov .bigshot { width:min(80vw,960px); height:min(60vh,540px); cursor:zoom-out; }
+  .ov .hint { color:#888; font-size:12px; text-align:center; margin-top:10px; }
+  .comp { background:#252526; border-top:1px solid #333; padding:10px 12px; display:flex; gap:8px; align-items:center; }
+  .comp .in { flex:1; background:#3c3c3c; border-radius:6px; padding:7px 10px; color:#888; }
+  .comp .mic { background:#3c3c3c; border-radius:6px; padding:6px 10px; }
+</style>
+
+<div class="vs">
+  <div class="vs-top">
+    <span class="title">Claude · nutrition-plan</span>
+    <span class="meta">your-plugin-stack-react · ctx 18% · 5h 6%</span>
+    <div class="seg"><span>Terminal</span><span class="on">Panel</span></div>
+  </div>
+  <div class="vs-body">
+    <div class="msg"><div class="who">You</div><div class="user">Make a table of the macro targets per activity level.</div></div>
+    <div class="msg">
+      <div class="who">Claude</div>
+      <div class="tool">Read src/plan/macros.ts</div>
+      <div>Here are the current targets. The calorie offsets for DEC-022 are reversed in the note; the table shows the correct ones:</div>
+      <div class="tblwrap" id="t1">
+        <div class="tbtns"><button onclick="copyT(event)">Copy</button><button onclick="openT(event)">⤢</button></div>
+        <table>
+          <tr><th>Activity</th><th>Calories</th><th>Protein (g)</th><th>Carbs (g)</th><th>Fat (g)</th><th>Note</th></tr>
+          <tr><td>Sedentary</td><td class="num">2,200</td><td class="num">140</td><td class="num">230</td><td class="num">75</td><td>Default</td></tr>
+          <tr><td>Light</td><td class="num">2,450</td><td class="num">150</td><td class="num">265</td><td class="num">80</td><td>3× / week</td></tr>
+          <tr><td>Moderate</td><td class="num">2,700</td><td class="num">160</td><td class="num">300</td><td class="num">85</td><td>DEC-034</td></tr>
+          <tr><td>Very active</td><td class="num">3,300</td><td class="num">180</td><td class="num">390</td><td class="num">95</td><td>−400 / +250</td></tr>
+        </table>
+      </div>
+      <div class="tool">playwright · browser_take_screenshot</div>
+      <div class="shot" onclick="openS()"><div class="bar"></div><div class="h"></div><div class="l"></div><div class="l" style="width:70%"></div><div class="l" style="width:50%"></div><div class="cap">screenshot · localhost:3000/plan</div></div>
+      <div>The macros card now shows the "Sample target" label.</div>
+    </div>
+  </div>
+  <div class="comp"><div class="in">Message Claude…</div><div class="mic">🎤</div></div>
+</div>
+
+<div class="ov" id="ov" onclick="closeOv(event)"><div class="box" id="ovbox"></div></div>
+
+<script>
+  function openT(e){ e.stopPropagation(); const c=document.getElementById('t1').cloneNode(true); c.querySelector('.tbtns').remove(); show(c, 'Select and copy the text · click outside or Esc to close'); }
+  function openS(){ const d=document.querySelector('.shot').cloneNode(true); d.classList.add('bigshot'); d.onclick=()=>hide(); show(d, 'Click the image or outside it to close'); }
+  function show(node, hint){ const b=document.getElementById('ovbox'); b.innerHTML=''; b.appendChild(node); const h=document.createElement('div'); h.className='hint'; h.textContent=hint; b.appendChild(h); document.getElementById('ov').classList.add('show'); }
+  function hide(){ document.getElementById('ov').classList.remove('show'); }
+  function closeOv(e){ if(e.target.id==='ov') hide(); }
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') hide(); });
+  function copyT(e){ e.stopPropagation(); const t=document.querySelector('#t1 table'); const tsv=[...t.rows].map(r=>[...r.cells].map(c=>c.innerText).join('\t')).join('\n'); navigator.clipboard?.writeText(tsv); e.target.textContent='Copied ✓'; setTimeout(()=>e.target.textContent='Copy',1200); }
+</script>

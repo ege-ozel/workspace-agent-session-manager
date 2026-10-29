@@ -132,14 +132,18 @@ const archivedRollouts = () => listDir(ARCHIVED_DIR)
   .map(n => rolloutIn(ARCHIVED_DIR, n)).filter((r): r is Rollout => !!r).sort((a, b) => b.m - a.m);
 
 /** Context used by a rollout: last token_count's tokens ÷ the model's context window. */
-function sessionContext(file: string): { ctxUsed?: number; detail?: string; model?: string; effort?: string } {
-  const out: { ctxUsed?: number; detail?: string; model?: string; effort?: string } = {};
+function sessionContext(file: string): { ctxUsed?: number; detail?: string; model?: string; effort?: string; cwd?: string; mode?: string; approvalPolicy?: string; sandbox?: string } & Partial<CodexActivity> {
+  const out: ReturnType<typeof sessionContext> = codexActivity(file);
   scanBackward(file, line => {
     if (!line.includes('"turn_context"')) return false;
     const p = parseJson(line)?.payload;
     if (typeof p?.model !== 'string') return false;
     out.model = p.model;
     if (typeof p.effort === 'string') out.effort = p.effort;
+    if (typeof p.cwd === 'string') out.cwd = p.cwd;
+    if (typeof p.collaboration_mode?.mode === 'string') out.mode = p.collaboration_mode.mode;
+    if (typeof p.approval_policy === 'string') out.approvalPolicy = p.approval_policy;
+    if (typeof p.sandbox_policy?.type === 'string') out.sandbox = p.sandbox_policy.type;
     return true;
   });
   scanBackward(file, line => {
@@ -153,6 +157,37 @@ function sessionContext(file: string): { ctxUsed?: number; detail?: string; mode
     return true;
   });
   return out;
+}
+
+/** Lifecycle events, rather than recent file writes: tool output alone does not mean the turn finished. */
+export function codexBusy(file: string): boolean {
+  return codexActivity(file).busy;
+}
+
+interface CodexActivity { busy: boolean; busySince?: number; activity?: 'compacting'; activitySince?: number }
+
+export function codexActivity(file: string): CodexActivity {
+  let activity: CodexActivity = { busy: false };
+  let phaseSeen = false;
+  scanBackward(file, line => {
+    if (!/task_started|task_complete|turn_aborted|final_answer|compact|Compaction/.test(line)) return false;
+    const j = parseJson(line);
+    if ((j?.type === 'response_item' && j.payload?.type === 'message' && j.payload.role === 'assistant' && j.payload.phase === 'final_answer')
+      || (j?.type === 'event_msg' && j.payload?.type === 'item_completed' && j.payload.item?.type === 'AgentMessage' && j.payload.item.phase === 'final_answer')) return true;
+    // Some CLI versions persist only the completion. Do not infer an automatic compaction from a high context bar.
+    if (!phaseSeen && (j?.type === 'compacted' || j?.type === 'event_msg' && (j.payload?.type === 'context_compacted'
+      || ['item_started', 'item_completed'].includes(j.payload?.type) && j.payload?.item?.type === 'ContextCompaction'))) {
+      phaseSeen = true;
+      if (j.payload?.type === 'item_started') activity = { busy: true, activity: 'compacting', activitySince: toMs(j.payload.started_at_ms) ?? toMs(j.timestamp) };
+      return false;
+    }
+    if (j?.type !== 'event_msg') return false;
+    const type = j.payload?.type;
+    if (!['task_started', 'task_complete', 'turn_aborted'].includes(type)) return false;
+    activity = type === 'task_started' ? { ...activity, busy: true, busySince: toMs(j.payload.started_at) ?? toMs(j.timestamp) } : { busy: false };
+    return true;
+  });
+  return activity;
 }
 
 interface LimitReport { left: number; reset?: number; at: number }
@@ -268,8 +303,11 @@ export function listCodexSessions(scope: SessionScope): SessionEntry[] {
     .map(({ r, live }) => {
       const c = codexListCache.get(r.file, r, '', () => sessionContext(r.file));
       return {
-        id: r.id, title: names.get(r.id) || fallbackTitle(r.id, meta(r.file).cwd), cwd: meta(r.file).cwd,
-        mtime: r.m, file: r.file, live, ctxUsed: c.ctxUsed, contextDetail: c.detail, model: c.model, effort: c.effort, source: sourceOf(meta(r.file).origin),
+        id: r.id, title: names.get(r.id) || fallbackTitle(r.id, meta(r.file).cwd), cwd: c.cwd ?? meta(r.file).cwd,
+        mtime: r.m, file: r.file, live, busy: live && !!c.busy, busySince: live && c.busy ? c.busySince : undefined,
+        activity: live && c.busy ? c.activity : undefined, activitySince: live && c.busy ? c.activitySince : undefined,
+        ctxUsed: c.ctxUsed, contextDetail: c.detail, model: c.model, effort: c.effort, mode: c.mode,
+        approvalPolicy: c.approvalPolicy, sandbox: c.sandbox, source: sourceOf(meta(r.file).origin),
       };
     });
 }
@@ -350,6 +388,39 @@ function callSummary(args: unknown): string {
   return typeof first === 'string' ? oneLine(first) : '';
 }
 
+function questionItems(name: string, args: unknown): ChatItem[] | undefined {
+  if (!/(?:^|\.)(request_user_input|request_user_input_async)$/.test(name)) return;
+  const input = typeof args === 'string' ? parseJson(args) : args;
+  if (!Array.isArray(input?.questions)) return;
+  return input.questions.flatMap((q: any): ChatItem[] => {
+    const title = typeof q.title === 'string' ? q.title : typeof q.question === 'string' ? q.question : '';
+    if (!title) return [];
+    const options = Array.isArray(q.options) ? q.options.map((o: any, i: number) => {
+      const label = typeof o === 'string' ? o : typeof o?.label === 'string' ? o.label : '';
+      return label ? `${i + 1}. ${label}${typeof o?.description === 'string' ? ` — ${o.description}` : ''}` : '';
+    }).filter(Boolean) : [];
+    return [{ kind: 'note', title: 'Question from agent', text: [title, ...options].join('\n') }];
+  });
+}
+
+/** apply_patch may be called directly or embedded as a string argument in functions.exec. Never execute the input. */
+function patchItems(input: unknown): ChatItem[] | undefined {
+  if (typeof input !== 'string') return;
+  let text = input;
+  const args = parseJson(text);
+  if (args && typeof args === 'object') text = Object.values(args).filter(v => typeof v === 'string').join('\n');
+  // Decode a JSON string literal used by tools.apply_patch("...") inside exec.
+  for (const m of text.matchAll(/"(?:[^"\\]|\\.)*"/g)) {
+    const decoded = parseJson(m[0]);
+    if (typeof decoded === 'string' && decoded.startsWith('*** Begin Patch')) { text = decoded; break; }
+  }
+  const patch = /\*\*\* Begin Patch\r?\n[\s\S]*?\*\*\* End Patch/.exec(text)?.[0];
+  if (!patch) return;
+  const files = [...patch.matchAll(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/gm)].map(m => m[1].trim());
+  if (!files.length) return;
+  return [{ kind: 'tool', name: 'apply_patch', summary: files.join(' · ') }, { kind: 'toolResult', text: 'Requested patch\n' + patch }];
+}
+
 /** Rollout lines → renderable items. Reasoning, event_msg, turn_context, developer and injected messages are skipped. */
 export function codexItems(lines: string[], at?: { file: string; offsets: number[] }): ChatItem[] {
   const out: ChatItem[] = [];
@@ -358,6 +429,35 @@ export function codexItems(lines: string[], at?: { file: string; offsets: number
     const j = parseJson(lines[li]);
     const p = j?.payload;
     const image = imageMaker(at && { file: at.file, offset: at.offsets[li] });
+    if (j?.type === 'event_msg') {
+      const item = p?.item;
+      if (p?.type === 'turn_aborted') {
+        out.push({ kind: 'note', title: 'Turn interrupted', text: typeof p.reason === 'string' ? p.reason : '' });
+      } else if (['error', 'warning'].includes(p?.type)) {
+        const message = typeof p.message === 'string' ? p.message : typeof p.error?.message === 'string' ? p.error.message : '';
+        if (message) out.push({ kind: 'note', title: p.type === 'error' ? 'Agent error' : 'Agent warning', text: message });
+      } else if (p?.type === 'item_completed' && item?.type === 'FileChange' && item.changes && typeof item.changes === 'object') {
+        for (const [file, change] of Object.entries(item.changes) as [string, any][]) {
+          const code = typeof change?.unified_diff === 'string' ? change.unified_diff : typeof change?.content === 'string' ? change.content : '';
+          out.push({ kind: 'toolResult', text: `Diff · ${file}\n${code || '(No code recorded)'}`,
+            ...(item.status === 'failed' ? { error: true } : {}) });
+        }
+      } else if (p?.type === 'item_completed' && item?.type === 'CommandExecution') {
+        const command = typeof item.command === 'string' ? item.command : Array.isArray(item.command) ? item.command.join(' ') : '';
+        const status = typeof item.exit_code === 'number' ? `exit ${item.exit_code}` : String(item.status ?? '');
+        out.push({ kind: 'note', title: `Ran ${oneLine(command)}${status ? ` · ${status}` : ''}`,
+          text: [command, typeof item.aggregated_output === 'string' ? item.aggregated_output : ''].filter(Boolean).join('\n\n') });
+      } else if (p?.type === 'task_complete') {
+        const duration = typeof p.duration_ms === 'number' && Number.isFinite(p.duration_ms) && p.duration_ms >= 0
+          ? p.duration_ms : undefined;
+        const seconds = duration === undefined ? undefined : Math.round(duration / 1000);
+        const elapsed = seconds === undefined ? '' : seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
+        const at = toMs(p.completed_at) ?? toMs(j.timestamp);
+        const time = at === undefined ? '' : new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        out.push({ kind: 'note', title: [elapsed ? `Worked for ${elapsed}` : 'Turn completed', time].filter(Boolean).join(' · '), text: '' });
+      }
+      continue;
+    }
     // The compacted line also carries a copy of the history it replaced: only its mark is shown.
     if (j?.type === 'compacted') out.push({ kind: 'note', title: 'Conversation compacted', text: typeof p?.message === 'string' ? p.message : '' });
     else if (j?.type !== 'response_item') continue;
@@ -371,9 +471,11 @@ export function codexItems(lines: string[], at?: { file: string; offsets: number
     } else if (p?.type === 'message' && p.role === 'assistant') {
       out.push(...blockItems(p.content, image, s => (s.trim() ? [{ kind: 'assistant', text: s }] : [])));
     } else if (p?.type === 'function_call' && typeof p.name === 'string') {
-      out.push({ kind: 'tool', name: p.name, summary: callSummary(p.arguments) });
+      out.push(...(questionItems(p.name, p.arguments) ?? patchItems(p.arguments) ?? [{ kind: 'tool' as const, name: p.name, summary: callSummary(p.arguments),
+        ...(typeof p.arguments === 'string' ? { detail: p.arguments } : {}) }]));
     } else if (p?.type === 'custom_tool_call' && typeof p.name === 'string') {
-      out.push({ kind: 'tool', name: p.name, summary: oneLine(String(p.input ?? '').split('\n')[0]) });
+      out.push(...(questionItems(p.name, p.input) ?? patchItems(p.input) ?? [{ kind: 'tool' as const, name: p.name, summary: oneLine(String(p.input ?? '').split('\n')[0]),
+        ...(typeof p.input === 'string' ? { detail: p.input } : {}) }]));
     } else if (p?.type === 'function_call_output' || p?.type === 'custom_tool_call_output') {
       // Several text blocks are one result, placed where the first one was.
       const parts = blockItems(p.output, image, s => result(s));
@@ -424,6 +526,8 @@ export const codex: Provider = {
   listSessions: (_ctx, scope) => listCodexSessions(scope),
   deleteSession: (s, ctx) => runCodexOnSession(exe(ctx), 'delete', s.id),
   readTranscript: readCodexTranscript,
+  queueInput: '\t',
+  interruptInput: '\x1b',
   terminal: (ctx, _cwd, resumeId, o = {}) => {
     // `resume` takes no --image; images go with a new session only, other files are named in the prompt.
     const images = resumeId ? [] : (o.files ?? []).filter(f => IMAGE.test(f));
@@ -451,6 +555,8 @@ export const codex: Provider = {
   slashCommands: [
     { command: '/model', detail: 'Switch model and reasoning effort' },
     { command: '/status', detail: 'Session configuration and token usage' },
+    { command: '/ps', detail: 'View background terminals in the native terminal' },
+    { command: '/stop', detail: 'Close background terminals through the native CLI' },
     { command: '/approvals', detail: 'What Codex may do without asking' },
     { command: '/compact', detail: 'Summarize the conversation to free context' },
     { command: '/new', detail: 'Start a new conversation' },

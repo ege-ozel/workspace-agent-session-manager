@@ -445,7 +445,18 @@ export function claudeItems(lines: string[], at?: { file: string; offsets: numbe
     }
     for (const b of Array.isArray(content) ? content : []) {
       if (b?.type === 'text' && typeof b.text === 'string') out.push(...text(b.text));
-      else if (b?.type === 'tool_use' && typeof b.name === 'string') out.push({ kind: 'tool', name: b.name, summary: toolSummary(b.input) });
+      else if (b?.type === 'tool_use' && typeof b.name === 'string') {
+        out.push({ kind: 'tool', name: b.name, summary: toolSummary(b.input),
+          ...(b.input && typeof b.input === 'object' ? { detail: JSON.stringify(b.input, null, 2) } : {}) });
+        const input = b.input;
+        if (b.name === 'Edit' && typeof input?.new_string === 'string') {
+          const before = typeof input.old_string === 'string' ? input.old_string.split('\n').map((s: string) => '-' + s).join('\n') : '';
+          const after = input.new_string.split('\n').map((s: string) => '+' + s).join('\n');
+          out.push({ kind: 'toolResult', text: `Diff · ${input.file_path ?? ''} (requested)\n${before}\n${after}` });
+        } else if (b.name === 'Write' && typeof input?.content === 'string') {
+          out.push({ kind: 'toolResult', text: `File · ${input.file_path ?? ''} (requested)\n${input.content}` });
+        }
+      }
       else if (b?.type === 'tool_result') out.push(...resultItems(b, image));
       else { const img = imageOf(b); if (img) out.push(image(img)); }
     }
@@ -516,6 +527,8 @@ export const claude: Provider = {
   listSessions: (ctx, scope) => listClaudeSessions(scope, ctx.setting<Record<string, number>>('claudeContextWindows') ?? {}),
   deleteSession: s => deleteClaudeSession(s),
   readTranscript: readClaudeTranscript,
+  queueInput: '\r',
+  interruptInput: '\x1b',
   terminal: (ctx, _cwd, resumeId, o = {}) => ({
     shellPath: claudeExe(ctx.extensionPath('anthropic.claude-code')),
     // Files go in the prompt as @mentions, which Claude Code reads itself.

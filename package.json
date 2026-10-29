@@ -44,7 +44,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onWebviewPanel:workspaceAgentSessions.sessionPanel"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -160,9 +161,9 @@
       },
       {
         "command": "workspaceAgentSessions.openSessionPanel",
-        "title": "Open Panel",
+        "title": "Open Session",
         "category": "Agent Sessions",
-        "icon": "$(preview)"
+        "icon": "$(comment-discussion)"
       },
       {
         "command": "workspaceAgentSessions.openPanelPick",
@@ -178,7 +179,7 @@
       },
       {
         "command": "workspaceAgentSessions.resumeSession",
-        "title": "Resume in Terminal",
+        "title": "Open Session",
         "category": "Agent Sessions",
         "icon": "$(play)"
       },
@@ -237,7 +238,7 @@
       },
       {
         "command": "workspaceAgentSessions.focusSession",
-        "title": "Show This Session's Terminal",
+        "title": "Open Session",
         "category": "Agent Sessions",
         "icon": "$(terminal)"
       },
@@ -485,7 +486,7 @@
         },
         {
           "command": "workspaceAgentSessions.resumeSession",
-          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.resume\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.resume\\./ && viewItem !~ /\\.panel\\./",
           "group": "inline@1"
         },
         {
@@ -565,7 +566,7 @@
         },
         {
           "command": "workspaceAgentSessions.resumeSession",
-          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.resume\\./",
+          "when": "view =~ /^workspaceAgentSessions\\.projects/ && viewItem =~ /\\.resume\\./ && viewItem !~ /\\.panel\\./",
           "group": "session@3"
         },
         {

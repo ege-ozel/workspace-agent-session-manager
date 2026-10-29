@@ -25,7 +25,7 @@ test('items in order', () => {
 
 test('tool summary', () => {
   const tools = claudeItems(fixtureLines()).filter(i => i.kind === 'tool');
-  assert.deepStrictEqual(tools[0], { kind: 'tool', name: 'Read', summary: 'src/a.ts' });
+  assert.deepStrictEqual(tools[0], { kind: 'tool', name: 'Read', summary: 'src/a.ts', detail: JSON.stringify({ file_path: 'src/a.ts' }, null, 2) });
   assert.strictEqual(tools[1].summary, 'npm test --all');
 });
 
@@ -176,4 +176,14 @@ test('a transcript that does not exist yet reads as empty, then fills in from `n
   assert.deepStrictEqual(first.items.map(i => i.kind), ['user']);
   fs.appendFileSync(f, jline({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] } }));
   assert.deepStrictEqual((await claude.readTranscript(f, first.next)).items.map(i => i.kind), ['assistant']);
+});
+
+test('edit and write calls retain the requested code instead of only a filename', () => {
+  const line = input => JSON.stringify({ type: 'assistant', message: { content: input } });
+  const result = claudeItems([line([
+    { type: 'tool_use', name: 'Edit', input: { file_path: 'a.ts', old_string: 'old', new_string: 'new\nnext' } },
+    { type: 'tool_use', name: 'Write', input: { file_path: 'b.ts', content: '<script>code</script>' } },
+  ])]);
+  assert.equal(result[1].text, 'Diff · a.ts (requested)\n-old\n+new\n+next');
+  assert.equal(result[3].text, 'File · b.ts (requested)\n<script>code</script>');
 });

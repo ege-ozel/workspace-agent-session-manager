@@ -1,0 +1,96 @@
+<h2>Panel look: which direction?</h2>
+<p class="subtitle">Same content, three styles. Imagine 4–7 of them open side by side. Click to choose; you can also say "A's font, B's spacing".</p>
+
+<style>
+  .sty { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:12px; }
+  @media (max-width:1100px){ .sty{ grid-template-columns:1fr; } }
+  .opt { border:2px solid transparent; border-radius:10px; cursor:pointer; overflow:hidden; }
+  .opt.selected { border-color:#3a7bd5; }
+  .lbl { padding:8px 12px; background:#2a2a2a; color:#eee; font:600 13px system-ui; }
+  .lbl small { display:block; font-weight:400; color:#aaa; margin-top:2px; }
+  .pv { height:430px; overflow:hidden; }
+  .pv table { border-collapse:collapse; width:100%; }
+  .pv .num { text-align:right; font-variant-numeric:tabular-nums; }
+
+  /* A: VS Code native */
+  .A { background:#1e1e1e; color:#cccccc; font:13px/1.5 "Segoe UI",system-ui,sans-serif; padding:10px 12px; }
+  .A .u { border-left:2px solid #0e639c; padding:2px 0 2px 8px; color:#e0e0e0; margin-bottom:10px; }
+  .A .chip { font:12px Consolas,monospace; color:#9cdcfe; margin:6px 0; }
+  .A .chip::before { content:"▸ "; color:#777; }
+  .A table { font-size:12px; margin:8px 0; border:1px solid #3c3c3c; }
+  .A th { background:#252526; text-align:left; font-weight:600; }
+  .A th,.A td { padding:3px 8px; border-bottom:1px solid #2d2d2d; }
+  .A .img { width:200px; height:110px; border:1px solid #3c3c3c; border-radius:3px; background:linear-gradient(135deg,#eef1f7,#dfe5ef); margin:6px 0; }
+
+  /* B: Desktop-app airy */
+  .B { background:#262624; color:#e8e6e1; font:15px/1.65 Georgia,"Iowan Old Style",serif; padding:18px 20px; }
+  .B .u { background:#3a3936; border-radius:14px; padding:8px 14px; display:inline-block; font-family:system-ui,sans-serif; font-size:14px; margin-bottom:16px; }
+  .B .chip { font:12px system-ui,sans-serif; color:#a8a39a; background:#31302d; border-radius:999px; padding:3px 10px; display:inline-block; margin:8px 0; }
+  .B table { font:13px/1.5 system-ui,sans-serif; margin:12px 0; border-radius:10px; overflow:hidden; box-shadow:0 0 0 1px #45433f; }
+  .B th { background:#33322f; text-align:left; font-weight:600; }
+  .B th,.B td { padding:8px 12px; border-bottom:1px solid #3a3936; }
+  .B .img { width:240px; height:130px; border-radius:12px; background:linear-gradient(135deg,#eef1f7,#dfe5ef); margin:10px 0; box-shadow:0 4px 14px rgba(0,0,0,.35); }
+
+  /* C: Dense, for many columns */
+  .C { background:#181818; color:#c8c8c8; font:12px/1.4 "Segoe UI",system-ui,sans-serif; padding:6px 8px; }
+  .C .u { color:#fff; font-weight:600; margin-bottom:6px; }
+  .C .u::before { content:"› "; color:#4fc1ff; }
+  .C .chip { font:11px Consolas,monospace; color:#888; margin:3px 0; }
+  .C table { font-size:11.5px; margin:5px 0; }
+  .C th { color:#fff; text-align:left; font-weight:600; border-bottom:1px solid #444; }
+  .C th,.C td { padding:2px 6px; }
+  .C tr:nth-child(even) td { background:#202020; }
+  .C .img { width:150px; height:84px; border-radius:2px; background:linear-gradient(135deg,#eef1f7,#dfe5ef); margin:4px 0; }
+</style>
+
+<div class="sty options">
+  <div class="opt" data-choice="a" onclick="toggleSelect(this)">
+    <div class="lbl">A · VS Code native<small>Editor's own font and colors, 13px, medium spacing. Looks like part of VS Code.</small></div>
+    <div class="pv A">
+      <div class="u">Make a table of the macro targets per activity level.</div>
+      <div class="chip">Read src/plan/macros.ts</div>
+      <div>Here are the current targets:</div>
+      <table><tr><th>Activity</th><th>Calories</th><th>Protein</th><th>Note</th></tr>
+        <tr><td>Sedentary</td><td class="num">2,200</td><td class="num">140</td><td>Default</td></tr>
+        <tr><td>Light</td><td class="num">2,450</td><td class="num">150</td><td>3×/week</td></tr>
+        <tr><td>Moderate</td><td class="num">2,700</td><td class="num">160</td><td>DEC-034</td></tr>
+        <tr><td>Very active</td><td class="num">3,300</td><td class="num">180</td><td>−400/+250</td></tr></table>
+      <div class="chip">playwright · take_screenshot</div>
+      <div class="img"></div>
+      <div>The macros card now shows the label.</div>
+    </div>
+  </div>
+  <div class="opt" data-choice="b" onclick="toggleSelect(this)">
+    <div class="lbl">B · Desktop app, airy<small>Large reading text (15px, serif), rounded cards and bubbles, lots of space. Like Claude / ChatGPT apps.</small></div>
+    <div class="pv B">
+      <div class="u">Make a table of the macro targets per activity level.</div><br>
+      <div class="chip">Read src/plan/macros.ts</div>
+      <div>Here are the current targets:</div>
+      <table><tr><th>Activity</th><th>Calories</th><th>Protein</th><th>Note</th></tr>
+        <tr><td>Sedentary</td><td class="num">2,200</td><td class="num">140</td><td>Default</td></tr>
+        <tr><td>Light</td><td class="num">2,450</td><td class="num">150</td><td>3×/week</td></tr>
+        <tr><td>Moderate</td><td class="num">2,700</td><td class="num">160</td><td>DEC-034</td></tr>
+        <tr><td>Very active</td><td class="num">3,300</td><td class="num">180</td><td>−400/+250</td></tr></table>
+      <div class="chip">playwright · take_screenshot</div><br>
+      <div class="img"></div>
+    </div>
+  </div>
+  <div class="opt" data-choice="c" onclick="toggleSelect(this)">
+    <div class="lbl">C · Dense<small>12px, tight spacing, no borders, zebra-striped table rows. Built for 6–7 panels side by side.</small></div>
+    <div class="pv C">
+      <div class="u">Make a table of the macro targets per activity level.</div>
+      <div class="chip">Read src/plan/macros.ts</div>
+      <div>Here are the current targets:</div>
+      <table><tr><th>Activity</th><th>Calories</th><th>Protein</th><th>Note</th></tr>
+        <tr><td>Sedentary</td><td class="num">2,200</td><td class="num">140</td><td>Default</td></tr>
+        <tr><td>Light</td><td class="num">2,450</td><td class="num">150</td><td>3×/week</td></tr>
+        <tr><td>Moderate</td><td class="num">2,700</td><td class="num">160</td><td>DEC-034</td></tr>
+        <tr><td>Very active</td><td class="num">3,300</td><td class="num">180</td><td>−400/+250</td></tr></table>
+      <div class="chip">playwright · take_screenshot</div>
+      <div class="img"></div>
+      <div>The macros card now shows the label.</div>
+      <div class="chip">Edit src/plan/card.tsx</div>
+      <div>Tests pass.</div>
+    </div>
+  </div>
+</div>

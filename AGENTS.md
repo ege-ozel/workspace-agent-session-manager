@@ -67,6 +67,9 @@ UI surfaces
 - **Active terminal highlight**: Projects row label `highlights` + `reveal` (needs `getParent`, so the view is a
   `createTreeView`), Usage row `.act`, sessions quick pick `activeItems`. `reveal` only when the active session
   changes, not on every reload (a busy session reloads the tree every few seconds).
+- **Codex terminal recovery on Windows**: revived terminals can omit `shellPath` / `shellArgs`. `codexResumeProcesses`
+  reads actual Codex process commands and `recoverCodexTerminals` requires both the terminal pid and an exact
+  `resume <session-id>` match. Do not restore ownership by title or cwd: several sessions can share both.
 - **Focus**: `refresh()` passes `ctx.focus` = the active terminal's session (`focusFor`: our terminals by id/pid/
   start time, any terminal by its shell-integration cwd). Providers pick it first, then fall back to the workspace
   rule. Claude matches by pid; Codex has none, so it matches by `startedAt` (`ownedThread`, see below).
@@ -87,13 +90,31 @@ UI surfaces
   cannot be typed anywhere (open in another process, terminal moved on) is refused with a message and the text comes back. While Claude's pid record says `status: "waiting"` (`SessionEntry.waitingFor`) Enter would answer the
   agent's question, so text is held in a queue and typed after the next *fresh* check (`PanelHost.fresh` re-lists the
   open sessions; the cached entry can be seconds old). Control characters are stripped from what is typed (an Esc
-  could end a bracketed paste early). Codex has no such state. The header's ◐ button cycles the look (editor / terminal / dark):
+  could end a bracketed paste early). Codex has no such state. The header's ◐ button cycles the look (editor / dark / terminal):
   `bg` message → globalState `panelTheme` → every state message carries `theme` → `body.term` / `body.dark` in
   `panel.css` (every colour derives from the `--bg`, `--fg`, `--side`, ... variables defined on `body`, never straight
   from `--vscode-*`). Sending from a panel whose session is closed
   (`SessionPanel.resumeWith`) resumes it through `PanelHost.resume`, queues the text and types it once a fresh listing
   says the session is live (the terminal's first keystrokes are lost before that; 60 s cap). Pasted pictures: webview
   card + `pasteImage` → temp file in `os.tmpdir()/agent-sessions-paste`; the path is appended to the sent text.
+  A missing connection is not proof that the session is in another window. Keep the composer and the reconnect
+  notice visible together: **Continue here** also works for live sessions; **Connect terminal** explicitly pairs
+  an unrecognized direct Codex terminal. Resuming a live session reveals its terminal and holds input until the user
+  chooses **Continue in panel**, so a native "resume anyway" dialog cannot consume the queued message. Re-check and
+  reuse an existing connection before launching another process; never close an external process to take over.
+- **Panel delivery and scrolling**: `Provider.queueInput` opts into the CLI's own input queue (Claude Enter, Codex
+  Tab while busy, Enter at idle; slash/shell commands use Enter). Native plain prompts always use bracketed paste,
+  including single lines, with a separate submit and a gap before the next paste. Busy state never holds those providers' messages locally.
+  Permission dialogs and startup still hold input. `panel/delivery.ts` acknowledges pending bubbles only from matching
+  new user transcript items, including exact combined records for consecutive submissions. Terminal writes do not
+  imply agent activity. After 10 s without acknowledgement or on disconnect, delivery is marked unconfirmed, never
+  auto-resubmitted. Persisted pending text comes back as unconfirmed after reload.
+  `/compact` shows a requested state; only an explicit provider phase (`SessionEntry.activity`) claims active compaction.
+  The current Codex CLI was observed writing completion (`compacted` / `ContextCompaction`), but no start event.
+  `media/scroll.js` follows within 48 px of the bottom; scrolling up pauses even late image/resize following. Expanded
+  results share the main vertical scroll; change markers beside it link to code blocks. Transcript watching coalesces
+  writes in 300 ms batches rather than waiting for writing to stop (5 s fallback poll).
+  Slash suggestions above the input come from `Provider.slashCommands`; no live agent menu API or plugin command discovery.
 - **Ways into the Panel**: the Projects row button / menu (`openSessionPanel`), the terminal toolbar (`openActivePanel`),
   the palette's `openPanelPick` (open sessions, then ≤ 50 latest closed; `pickItems`), and "<agent> in terminal + Panel"
   in the new-session chain (`newSessionFlow` → `launch` → `panelWhenKnown`). That last one asks nothing new: it polls
@@ -102,6 +123,14 @@ UI surfaces
   Not before `Launched.pid` is known: until then `resolveLaunched` can only match by folder, which names an *older*
   session of the repo. A new Claude session has no transcript (and maybe no project folder) yet, so the Panel opens
   empty and `SessionPanel.watch()` re-attaches its folder watcher on each pass until the folder exists.
+  Projects row/open actions ask **Panel / Terminal** on every open, with the last choice first; other entry points
+  follow the saved choice. The webview header includes the full cwd and recorded Codex mode/permission settings.
+  `Provider.interruptInput` enables Esc only after a fresh check of the exact live busy session, outside paste/startup/dialogs.
+  `ChatItem.tool.detail` retains full call input; large previews have an explicit full-text editor action.
+  Register webview message listeners before assigning HTML. Keep new media compatible with an already loaded older
+  host's HTML (local junctions update media immediately); load a missing scroll helper and create missing controls.
+  Seed a visible loading state and support retry rather than leaving a blank panel. Native parity limits and the
+  transport roadmap are in `docs/panel-native-parity.md`; do not infer live approvals/process counts from completed records.
 - **Session list cache**: `listClaudeSessions` / `listCodexSessions` keep what a file's content decides (title,
   context, model) in a `StatCache` keyed by mtime + size (Claude also by the `claudeContextWindows` setting); liveness,
   busy / waiting and Codex titles are asked again every call. A full listing prunes entries of vanished files, an
@@ -185,6 +214,32 @@ be served via terminal sessions or by opening the repo in its own window (`openI
 
 ## Build, install, verify
 
+### Default local development: build, then Reload Window
+
+The maintainer wants to test changes in the **current VS Code window**, including the current conversation.
+Use this workflow for routine development; do not require F5, a version bump or a VSIX install for every change.
+
+- Run `npm run compile` after TypeScript changes, or `npm test` when tests are appropriate (it also compiles).
+  `npm run watch` is optional; Reload Window does not compile TypeScript by itself.
+- The installed extension's `out` and `media` directories are Windows junctions to this repo's `out` and `media`.
+  Setup verified on 2026-10-28:
+  `C:\Users\4D\.vscode\extensions\egeozel.workspace-agent-session-manager-0.31.9\{out,media}`
+  points to `D:\CodeSpace\workspace-agent-session-manager\{out,media}` respectively.
+  The original directories were kept as `out.before-local-dev` and `media.before-local-dev` beside the junctions.
+- After a successful build, tell the user to run **Developer: Reload Window in the current window**.
+  Changes under `media/` need no TypeScript compilation. Reload also recreates the panel webviews.
+- Before claiming this works in a new environment or after an extension update/reinstall, verify the actual
+  installed extension directory and both junction targets. The versioned directory above is a local setup record,
+  not a path to assume forever. If links are missing, restore the setup with the required filesystem permissions,
+  preserving existing directories and validating every source, destination and backup path before moving anything.
+- These two junctions do not link `package.json`, `images/` or other installed files. If a change affects those,
+  explicitly synchronize the affected files or package/install for a release check; do not claim Reload Window
+  alone loads files that are still stale in the installed copy.
+- F5 remains an optional debugging tool. Its separate Extension Development Host does not update the main window.
+  Packaging, version bumps and installation below are for release checks or an explicitly requested install.
+
+### Release-check build and install
+
 ```
 npm install
 npx tsc -p .                                   # must be clean
@@ -193,9 +248,10 @@ code --install-extension workspace-agent-session-manager-<version>.vsix --force
 ```
 Then in VS Code: *Developer: Reload Window*. Bump `version` in `package.json` for each install.
 
-Faster while developing: **F5** ("Run Extension", `.vscode/launch.json`) starts `tsc --watch` and opens an Extension
+Optional debugging: **F5** ("Run Extension", `.vscode/launch.json`) starts `tsc --watch` and opens an Extension
 Development Host window running `out/` directly, with breakpoints and `console.log` in the Debug Console. In that
-window, Ctrl+R reloads the latest build. It overrides the installed copy there only; other windows keep the `.vsix`.
+window, Ctrl+R reloads the latest build. It overrides the installed copy there only; other windows use their installed
+copy (with the local junction setup above, that copy also reads this repo's `out/` and `media/`).
 Package + install only for a release check (the `.vsix` is what users get).
 
 `npm test` compiles and runs the unit tests (`node:test`, no dev dependencies) in `test/` against `out/`, with

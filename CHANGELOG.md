@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Panel: native input queues, transcript-confirmed delivery, recoverable pending messages and explicit reconnect/resume actions. Open panels, drafts and appearance survive reloads.
+- Panel: highlighted code/diffs, full tool inputs, recorded errors and interruptions, elapsed work time, repository and recorded permission/mode details, and Esc to interrupt a verified busy session.
+- Panel: reliable following near the bottom, shared result scrolling, code change markers, local slash suggestions, font controls, and compatible startup when media updates before the running Extension Host.
+- Projects: repo ordering, panel-aware focus and an explicit Panel/Terminal choice on every conversation open. Codex terminal mappings recover across reloads without guessing by title or folder.
+- Added a native-parity audit identifying which features require a live agent transport rather than transcript parsing.
+
 ## 0.31.9
 
 - Panel: code blocks get a *Copy* button on hover (like tables), and selected text is put on the clipboard as plain text by the Panel itself, in case the webview's own copy did not.

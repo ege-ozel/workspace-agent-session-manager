@@ -1,6 +1,7 @@
 /** Pure part of the Panel view (no `vscode` import): what the webview receives for a transcript and a session. */
 import { ChatItem, SessionEntry, Snapshot } from '../api';
 import { escapeHtml, renderMarkdown } from './markdown';
+import { CodeLine, codeLines } from './code';
 
 export const FIRST_BATCH = 200;
 /** Longest tool result sent to the webview; the rest is counted in `more`. */
@@ -8,8 +9,8 @@ export const MAX_RESULT = 20_000;
 
 export type ViewItem =
   | { i: number; kind: 'user' | 'assistant'; html: string }
-  | { i: number; kind: 'tool'; name: string; summary: string; done?: boolean }
-  | { i: number; kind: 'toolResult'; text: string; error?: boolean; more?: number }
+  | { i: number; kind: 'tool'; name: string; summary: string; done?: boolean; detail?: string; more?: number }
+  | { i: number; kind: 'toolResult'; text: string; error?: boolean; more?: number; code?: CodeLine[] }
   /** `ref` = the item's absolute index; the webview asks for the picture by it when it scrolls into view. */
   | { i: number; kind: 'image'; ref: number; mime: string }
   | { i: number; kind: 'note'; title: string; text: string };
@@ -40,9 +41,14 @@ export function toView(items: ChatItem[], start: number): ViewItem[] {
     switch (it.kind) {
       case 'user': return { i, kind: 'user', html: userHtml(it.text) };
       case 'assistant': return { i, kind: 'assistant', html: renderMarkdown(it.text) };
-      case 'tool': return DONE[it.name] ? { i, kind: 'tool', name: DONE[it.name], summary: it.summary, done: true } : { i, kind: 'tool', name: it.name, summary: it.summary };
+      case 'tool': return { i, kind: 'tool', name: DONE[it.name] ?? it.name, summary: it.summary,
+        ...(DONE[it.name] ? { done: true } : {}), ...(it.detail ? { detail: it.detail.slice(0, MAX_RESULT) } : {}),
+        ...(it.detail && it.detail.length > MAX_RESULT ? { more: it.detail.length - MAX_RESULT } : {}) };
       case 'toolResult': {
         const v: ViewItem = { i, kind: 'toolResult', text: it.text.slice(0, MAX_RESULT) };
+        if (/^(Diff · |File · |Requested patch\n)/.test(v.text)) {
+          v.code = codeLines(v.text.split('\n').slice(1).join('\n'), !v.text.startsWith('File · '));
+        }
         if (it.error) v.error = true;
         if (it.text.length > MAX_RESULT) v.more = it.text.length - MAX_RESULT;
         return v;
@@ -57,12 +63,14 @@ export interface Meter { pct: number; stale?: boolean }
 
 export interface ViewHeader {
   agent: string;
-  /** Neutral badge letter: no colour tells agents apart. */
-  letter: string;
   title: string;
   repo?: string;
+  cwd?: string;
   model?: string;
   effort?: string;
+  mode?: string;
+  approvalPolicy?: string;
+  sandbox?: string;
   ctx?: { pct: number; label?: string };
   five?: Meter;
   week?: Meter;
@@ -78,11 +86,15 @@ function ctxLabel(detail?: string): string | undefined {
 
 /** Header data from what the extension already has. Missing values are left out, not shown as "—". */
 export function headerOf(agent: string, s: SessionEntry | undefined, snap: Snapshot | undefined): ViewHeader {
-  const h: ViewHeader = { agent, letter: agent === 'Codex' ? 'X' : agent.charAt(0).toUpperCase(), title: s?.title ?? '' };
+  const h: ViewHeader = { agent, title: s?.title ?? '' };
   const repo = s?.cwd?.split(/[\\/]/).filter(Boolean).pop();
   if (repo) h.repo = repo;
+  if (s?.cwd) h.cwd = s.cwd;
   if (s?.model) h.model = s.model;
   if (s?.effort) h.effort = s.effort;
+  if (s?.mode) h.mode = s.mode;
+  if (s?.approvalPolicy) h.approvalPolicy = s.approvalPolicy;
+  if (s?.sandbox) h.sandbox = s.sandbox;
   if (s?.ctxUsed !== undefined) {
     h.ctx = { pct: Math.round(s.ctxUsed) };
     const label = ctxLabel(s.contextDetail);

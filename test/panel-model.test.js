@@ -59,9 +59,23 @@ test('header shows used, not left, and leaves out what is missing', () => {
   const h = headerOf('Claude', { id: 'a', title: 'T', cwd: '/w/repo', mtime: 0, file: 'f', ctxUsed: 18, model: 'claude-opus-5-5', effort: 'high',
     contextDetail: '180,000 / 1,000,000 tokens · claude-opus-5-5' }, { available: true, fiveLeft: 94, weekLeft: 14, limitsStale: true });
   assert.deepStrictEqual(h, {
-    agent: 'Claude', letter: 'C', title: 'T', repo: 'repo', model: 'claude-opus-5-5', effort: 'high',
+    agent: 'Claude', title: 'T', repo: 'repo', cwd: '/w/repo', model: 'claude-opus-5-5', effort: 'high',
     ctx: { pct: 18, label: '180k / 1M' }, five: { pct: 6, stale: true }, week: { pct: 86, stale: true },
   });
   const bare = headerOf('Codex', { id: 'b', title: 'U', mtime: 0, file: 'f' }, undefined);
-  assert.deepStrictEqual(bare, { agent: 'Codex', letter: 'X', title: 'U' });
+  assert.deepStrictEqual(bare, { agent: 'Codex', title: 'U' });
+});
+
+test('header keeps recorded mode, permissions and full repository path without guessing missing settings', () => {
+  const h = headerOf('Codex', { id: 'A', title: 'Title', cwd: 'D:\\repo\\project', file: 'f', mtime: 0,
+    mode: 'plan', approvalPolicy: 'on-request', sandbox: 'workspace-write' });
+  assert.equal(h.cwd, 'D:\\repo\\project');
+  assert.equal(h.repo, 'project');
+  assert.equal(h.mode, 'plan');
+  assert.equal(h.approvalPolicy, 'on-request');
+  assert.equal(h.sandbox, 'workspace-write');
+  const [tool] = toView([{ kind: 'tool', name: 'exec', summary: 'script', detail: '<script>' + 'x'.repeat(MAX_RESULT) }], 9);
+  assert.equal(tool.detail.length, MAX_RESULT);
+  assert.equal(tool.more, 8);
+  assert.equal(tool.i, 9);
 });
